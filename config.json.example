@@ -1,0 +1,8 @@
+{
+    "windows_workspaces_path": "C:/Development/VS Code workspaces",
+    "wsl_workspaces_path": "/mnt/c/Development/VS Code workspaces",
+    "launch_options": {
+        "wsl_command": "wsl code",
+        "windows_command": "code.cmd"
+    }
+}
