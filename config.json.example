@@ -3,6 +3,9 @@
     "wsl_workspaces_path": "/mnt/c/Development/VS Code workspaces",
     "launch_options": {
         "wsl_command": "wsl code",
-        "windows_command": "code.cmd"
-    }
+        "windows_command": "code.cmd",
+        "wsl_insiders_command": "wsl code-insiders",
+        "windows_insiders_command": "code-insiders.cmd"
+    },
+    "last_selected_option": "normal"
 }

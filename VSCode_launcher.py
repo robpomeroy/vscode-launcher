@@ -1,13 +1,14 @@
 import dearpygui.dearpygui as dpg
 import os
 import json
+import re
 import subprocess
 import sys
 import logging
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
@@ -15,18 +16,23 @@ logging.basicConfig(
             os.path.dirname(os.path.abspath(__file__ if '__file__' in globals()
                                             else sys.executable)),
             'vscode_launcher.log'
-        ), 'w')
+        ), 'a')  # Changed from 'w' to 'a' for append mode
     ]
 )
 logger = logging.getLogger('VSCodeLauncher')
 
 # Constants
-VERSION = "v0.9.0"
-DEFAULT_BUTTON_WIDTH = 85
+VERSION = "v0.10.0"
+APP_HEIGHT = 300  # Increased to accommodate wrapped status text
+APP_WIDTH = 500
+DEFAULT_BUTTON_WIDTH = APP_WIDTH // 4 - 22
 KEY_SHIFT = 16
 KEY_TAB = 9
 KEY_ENTER = 13
 KEY_SPACE = 32
+KEY_ESCAPE = 526
+KEY_I = 554
+KEY_N = 559
 KEY_Q = 562
 KEY_X = 569
 
@@ -45,7 +51,11 @@ def get_buttons_list(left_list, right_list):
     return left_list + right_list
 
 def load_config():
-    """Load configuration from config.json file"""
+    """
+    Load configuration from config.json file.
+
+    Note: abspath() used to avoid path traversal issues.
+    """
     try:
         if hasattr(sys, '_MEIPASS'):
             # Running from PyInstaller bundle; config should be in the same
@@ -56,18 +66,22 @@ def load_config():
         else:
             # Running in normal Python environment; config should be in the
             # same directory as this script.
-            config_path = os.path.join(
-                os.path.dirname(__file__), 'config.json')
+            base_dir = os.path.abspath(os.path.dirname(__file__))
+            config_path = os.path.abspath(os.path.join(base_dir, 'config.json'))
         
         # Create default config if it doesn't exist
         if not os.path.exists(config_path):
+            # Extend the configuration to include VS Code Insiders commands
             default_config = {
                 "windows_workspaces_path": "H:/Development/VS Code workspaces",
                 "wsl_workspaces_path": "/mnt/h/Development/VS Code workspaces",
                 "launch_options": {
                     "wsl_command": "wsl code",
-                    "windows_command": "code.cmd"
-                }
+                    "windows_command": "code.cmd",
+                    "wsl_insiders_command": "wsl code-insiders",
+                    "windows_insiders_command": "code-insiders.cmd"
+                },
+                "last_selected_option": "normal"  # Default to normal VS Code
             }
             
             # Ensure directory exists
@@ -85,10 +99,10 @@ def load_config():
             
             return default_config
     except PermissionError as e:
-        print(f"Error: Cannot create configuration file: {e}")
+        logger.error(f"Error: Cannot create configuration file: {e}")
         return None
     except Exception as e:
-        print(f"Unexpected error creating configuration: {e}")
+        logger.error(f"Unexpected error creating configuration: {e}")
         return None
     
     # Load existing config
@@ -96,7 +110,7 @@ def load_config():
         with open(config_path, 'r') as f:
             return json.load(f)
     except json.JSONDecodeError:
-        print(f"Error: Invalid JSON in {config_path}")
+        logger.error(f"Error: Invalid JSON in {config_path}")
         return None
 
 
@@ -111,6 +125,13 @@ def get_data_file_path(filename):
     else:
         # Running in normal Python environment
         return os.path.join(os.path.dirname(__file__), filename)
+
+
+def validate_workspace_name(workspace):
+    if not re.match(r'^[\w\s\[\]\-\.]+\.code-workspace$', workspace):
+        logger.error(f"Invalid workspace name: {workspace}")
+        return False
+    return True
 
 
 def get_workspaces(config):
@@ -139,10 +160,12 @@ def get_workspaces(config):
                 # extension
                 if "[WSL]" in file:
                     display_name = file.split(" [WSL]")[0]
-                    workspaces["WSL"].append((display_name, file))
+                    if validate_workspace_name(file):
+                        workspaces["WSL"].append((display_name, file))
                 elif "[Win]" in file:
                     display_name = file.split(" [Win]")[0]
-                    workspaces["Win"].append((display_name, file))
+                    if validate_workspace_name(file):
+                        workspaces["Win"].append((display_name, file))
     
     return workspaces
 
@@ -168,29 +191,40 @@ def launch_workspace(workspace, wsl, config):
     if not workspace or not isinstance(workspace, str):
         error_msg = "Invalid workspace filename"
         dpg.set_value("status_text", error_msg)
-        print(error_msg)
+        logger.error(error_msg)
         return
     
     # Only allow code-workspace files
     if not workspace.endswith('.code-workspace'):
         error_msg = "Invalid workspace file type"
         dpg.set_value("status_text", error_msg)
-        print(error_msg)
+        logger.error(error_msg)
         return
         
-    # Get command based on target environment
+    # Determine the command based on the selected option
+    selected_option = config.get("last_selected_option", "normal")
     if wsl:
-        command = launch_options.get("wsl_command", "wsl code").split()
         workspace_path = f"{wsl_path}/{workspace}"
+        if selected_option == "insiders":
+            command = launch_options.get(
+                "wsl_insiders_command", "wsl code-insiders").split()
+        else:
+            command = launch_options.get(
+                "wsl_command", "wsl code").split()
     else:
-        command = launch_options.get("windows_command", "code.cmd").split()
-        workspace_path = f"{windows_path}/{workspace}"
+        workspace_path = os.path.join(windows_path, workspace)
+        if selected_option == "insiders":
+            command = launch_options.get(
+                "windows_insiders_command", "code-insiders.cmd").split()
+        else:
+            command = launch_options.get(
+                "windows_command", "code.cmd").split()
     
     # Ensure the workspace path doesn't contain any shell metacharacters
     if any(c in workspace_path for c in ';$&|<>(){}!#'):
         error_msg = "Invalid characters in workspace path"
         dpg.set_value("status_text", error_msg)
-        print(error_msg)
+        logger.error(error_msg)
         return
         
     try:
@@ -209,11 +243,19 @@ def main():
     Main application entry point. Sets up the UI, loads workspaces,
     and handles user interaction.
     """
+    # Clear marker in logs
+    logger.info("====== APPLICATION STARTING ======")
+    
     # Load configuration
     config = load_config()
     if not config:
-        print("Error loading configuration. Please check config.json file.")
+        logger.error(
+            "Error loading configuration. Please check config.json file.")
         return
+    
+    # Navigation instructions
+    instructions = ("Q/X/Escape: exit        N/I: Normal/Insiders        "
+                    "Tab: navigate        Enter/Space: select")
     
     # Initialise the DearPyGui context and get the list of workspaces
     dpg.create_context()
@@ -305,11 +347,9 @@ def main():
             else:
                 # Other buttons - normal theme
                 dpg.bind_item_theme(button, button_theme)
-          # Update status bar
         button_label = dpg.get_item_label(selected_button)        
         dpg.set_value("status_text",
-                      f"Selected: {button_label} - Press Q or X"
-                      " to exit | Tab to navigate | Enter/Space to select")
+                      f"Selected: {button_label}\n{instructions}")
     
     # Handle Tab key to move selection
     def tab_handler(sender, key_data):
@@ -332,8 +372,8 @@ def main():
         
         return True
     
-    # Activate the currently selected button
     def activate_selected_button():
+        """Activate the currently selected button."""
         all_buttons = get_all_buttons()
         if not all_buttons or selected_button_idx[0] >= len(all_buttons):
             return False
@@ -349,21 +389,83 @@ def main():
         launch_workspace(filename, wsl=is_wsl, config=config)
         
         return True
-      # Handle Enter or Space key to activate the selected button
+    
     def enter_handler(sender, key_data):
-        logger.debug(f"Enter/Space pressed! sender={sender}, key_data={key_data}")
-        return activate_selected_button()    # Keyboard handler for other keys
+        """
+        Handle Enter and Space key presses to activate the selected button.
+        """
+        logger.debug(f"Enter/Space pressed! sender={sender}, "
+                     f"key_data={key_data}")
+        return activate_selected_button()
+
     def key_handler(sender, key_data):
+        """
+        Handle key presses for exiting the application and selecting VS Code
+        versions.
+        """
         key_pressed = key_data
-        # Exit on 'q' or 'x' key press (both uppercase and lowercase)
-        if key_pressed == KEY_Q or key_pressed == KEY_X:
-            logger.info(f"Key pressed: {key_pressed}, exiting...")
+        # Log all key presses to help debug key codes
+        logger.info(f"Key pressed: {key_pressed} (sender: {sender})")
+        
+        # Exit on 'q' or 'x'
+        if (key_pressed == KEY_Q or key_pressed == KEY_X
+            or key_pressed == KEY_ESCAPE):
+            logger.info(
+                f"Key press recognized as Q/X ({key_pressed}), exiting...")
             dpg.stop_dearpygui()
             return True
+        elif key_pressed == KEY_N:
+            logger.info(
+                f"Key press recognized as N ({key_pressed}), selecting Normal")
+            # Log current value before change
+            if dpg.does_item_exist("code_version_selector"):
+                current_value = dpg.get_value("code_version_selector")
+                logger.info(f"Current radio button value: {current_value}")
+                # Set new value
+                dpg.set_value("code_version_selector", "Normal")
+                # Log new value after change
+                new_value = dpg.get_value("code_version_selector")
+                logger.info(f"New radio button value: {new_value}")
+                update_last_selected_option("normal")
+                # Update status text to indicate current selection
+                dpg.set_value(
+                    "status_text",
+                    f"VS Code version set to: Normal\n{instructions}")
+                # Force UI refresh
+                dpg.configure_item("code_version_selector",
+                                   default_value="Normal")
+            else:
+                logger.error("Radio button with tag 'code_version_selector' "
+                             "does not exist!")
+            return True
+        # Handle 'I' key to select Insiders VS Code version  
+        elif key_pressed == KEY_I:  # Dear PyGui key code for 'I'
+            logger.info(f"Key press recognized as I ({key_pressed}), "
+                        "selecting Insiders")
+            # Log current value before change
+            if dpg.does_item_exist("code_version_selector"):
+                current_value = dpg.get_value("code_version_selector")
+                logger.info(f"Current radio button value: {current_value}")
+                # Set new value
+                dpg.set_value("code_version_selector", "Insiders")
+                # Log new value after change
+                new_value = dpg.get_value("code_version_selector")
+                logger.info(f"New radio button value: {new_value}")
+                update_last_selected_option("insiders")
+                # Update status text to indicate current selection
+                dpg.set_value(
+                    "status_text",
+                    f"VS Code version set to: Insiders\n{instructions}")
+                # Force UI refresh
+                dpg.configure_item("code_version_selector",
+                                   default_value="Insiders")
+            else:
+                logger.error("Radio button with tag 'code_version_selector' "
+                             "does not exist!")
+            return True
             
-        logger.debug(f"Key pressed: {key_pressed}")
-        return False# Create workspace buttons for WSL or Windows
-    
+        return False
+        
     def create_workspace_buttons(workspace_list, is_wsl, left_group,
                                  right_group):
         """Create buttons for either WSL or Windows workspaces
@@ -418,8 +520,8 @@ def main():
             left_buttons: List to store left column buttons
             right_buttons: List to store right column buttons
         """
-        with dpg.child_window(tag=panel_tag, width=190, height=-35,
-                              border=True):
+        with dpg.child_window(tag=panel_tag, width=APP_WIDTH // 2 - 20,
+                              height=-45, border=True):
             # Add title text
             title = dpg.add_text(title_text)
             dpg.bind_item_font(title, default_font)
@@ -466,15 +568,49 @@ def main():
     def create_status_bar():
         """Create the status bar at the bottom of the window"""
         dpg.add_separator()
-        with dpg.group(horizontal=True):
-            status_text = dpg.add_text(
-                "Press Q or X to exit | Tab to navigate | "
-                "Enter/Space to select",
-                tag="status_text")
+        # Using vertical group instead of horizontal to allow text wrapping
+        with dpg.group():
+            status_text = dpg.add_text(instructions, tag="status_text",
+                                       wrap=APP_WIDTH-20)
             dpg.bind_item_font(status_text, small_font)
+
+    def create_radio_control():
+        """
+        Create a horizontal radio control for selecting VS Code or VS Code
+        Insiders.
+        """
+        with dpg.group(horizontal=True):
+            dpg.add_text("Select VS Code Version:")
+            # Ensure the default value matches the case and format of the radio
+            # button items
+            default_value = ("Normal" if
+                             config.get("last_selected_option",
+                                        "normal").lower() == "normal"
+                             else "Insiders")
+            logger.info(
+                f"Creating radio button with default value: {default_value}")
+            radio_button = dpg.add_radio_button(
+                items=["Normal", "Insiders"],
+                default_value=default_value,
+                callback=lambda sender,
+                app_data: update_last_selected_option(app_data),
+                tag="code_version_selector",
+                horizontal=True
+            )
+            logger.info(f"Radio button created with ID: {radio_button}")
+
+    def update_last_selected_option(selected_option):
+        """Update the last selected option in the configuration."""
+        config["last_selected_option"] = selected_option.lower()
+        # Save the updated configuration back to the file
+        config_path = os.path.join(
+            os.path.dirname(__file__), 'config.json')
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=4)
 
     # Main window
     with dpg.window(tag="Primary Window"):
+        create_radio_control()
         with dpg.group():
             # Workspace area (horizontal layout for WSL and Windows)
             with dpg.group(horizontal=True):
@@ -521,8 +657,8 @@ def main():
     # Run the app
     icon_path = get_data_file_path("VSCL.ico")
     dpg.create_viewport(
-        title=f"VSCode Launcher {VERSION}", width=500, height=280,
-        resizable=True, min_width=400, min_height=280,
+        title=f"VSCode Launcher {VERSION}", width=APP_WIDTH, height=APP_HEIGHT,
+        resizable=True, min_width=(APP_WIDTH - 100), min_height=APP_HEIGHT,
         small_icon=icon_path, large_icon=icon_path)
     
     dpg.setup_dearpygui()

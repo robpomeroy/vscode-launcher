@@ -1,0 +1,14 @@
+# VS Code Launcher version history
+
+## v0.10.0 21 May 2025
+
+- Add support for choosing between standard VS Code and VS Code Insiders.
+  Remember the last choice.
+- Allow exiting with the ESCAPE key.
+- Use constants for initial window height/width.
+- Add more logging.
+- Avoid path traversal issues.
+
+## v0.9.0 19 May 2025
+
+First public release.

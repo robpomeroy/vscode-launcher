@@ -2,7 +2,8 @@
 
 A simple, keyboard-navigable launcher for VS Code workspaces that supports both
 Windows and WSL environments. This tool makes it easy to switch between projects
-across different environments.
+across different environments, and to choose between standard VS Code and VS
+Code Insiders.
 
 ![VS Code Launcher Screenshot](images/screenshot.jpg)
 
@@ -16,6 +17,8 @@ across different environments.
 - Configurable paths for Windows and WSL workspaces
 - Dynamic UI that adjusts to window resizing
 - Clear visual feedback for selected items
+- Selector for VS Code Insiders or standard VS Code, with the last used
+  selection remembered
 
 ## Requirements
 
@@ -29,7 +32,7 @@ The launcher uses a JSON configuration file (`config.json`) to define:
 
 1. Path to VS Code workspaces in Windows
 2. Equivalent path to the same workspaces in WSL
-3. Command to launch VS Code in each environment
+3. Command to launch VS Code [Insiders] in each environment
 
 Example configuration:
 
@@ -39,7 +42,9 @@ Example configuration:
     "wsl_workspaces_path": "/mnt/h/Development/VS Code workspaces",
     "launch_options": {
         "wsl_command": "wsl code",
-        "windows_command": "code.cmd"
+        "windows_command": "code.cmd",
+        "wsl_insiders_command": "wsl code-insiders",
+        "windows_insiders_command": "code-insiders.cmd"
     }
 }
 ```
