@@ -1,2 +1,3 @@
 dearpygui
 pyinstaller
+pywin32

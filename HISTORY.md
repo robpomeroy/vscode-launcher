@@ -1,5 +1,9 @@
 # VS Code Launcher version history
 
+## v.0.11.0 22 May 2025
+
+- Make VSCL single-instance.
+
 ## v0.10.0 21 May 2025
 
 - Add support for choosing between standard VS Code and VS Code Insiders.

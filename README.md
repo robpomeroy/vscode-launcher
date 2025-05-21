@@ -19,6 +19,7 @@ Code Insiders.
 - Clear visual feedback for selected items
 - Selector for VS Code Insiders or standard VS Code, with the last used
   selection remembered
+- Launches single instance
 
 ## Requirements
 
