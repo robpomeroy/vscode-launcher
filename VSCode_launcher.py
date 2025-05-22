@@ -519,13 +519,13 @@ def main():
 
             # Save window size to config when user resizes and only save if
             # significantly different (to avoid constant writes).
-            # The use of the "size_changed" variable is to fix linting issues
-            # (line length/indentation).
-            size_changed = (
+            # The use of the "significant_size_changed" variable is to fix
+            # linting issues (line length/indentation).
+            significant_size_changed = (
                 abs(window_width - app_width) > 10 or
                 abs(window_height - app_height) > 10
             )
-            if size_changed:
+            if significant_size_changed:
                 save_window_size(config, window_width, window_height)
                 logger.debug(
                     f"Saved window size: {window_width}x{window_height}")
