@@ -7,5 +7,9 @@
         "wsl_insiders_command": "wsl code-insiders",
         "windows_insiders_command": "code-insiders.cmd"
     },
-    "last_selected_option": "normal"
+    "last_selected_option": "normal",
+    "window_size": {
+        "width": 460,
+        "height": 300
+    }
 }

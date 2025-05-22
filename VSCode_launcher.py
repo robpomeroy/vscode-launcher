@@ -26,10 +26,10 @@ logger = logging.getLogger('VSCodeLauncher')
 
 # Constants
 VERSION = "v0.11.0"
-WINDOW_TITLE = f"VSCode Launcher {VERSION}"
-APP_HEIGHT = 300  # Increased to accommodate wrapped status text
-APP_WIDTH = 500
-DEFAULT_BUTTON_WIDTH = APP_WIDTH // 4 - 22
+WINDOW_TITLE = f"VSCodeLauncher {VERSION}"
+DEFAULT_APP_HEIGHT = 300  # Default height if not specified in config
+DEFAULT_APP_WIDTH = 500   # Default width if not specified in config
+DEFAULT_BUTTON_WIDTH = DEFAULT_APP_WIDTH // 4 - 22
 KEY_SHIFT = 16
 KEY_TAB = 9
 KEY_ENTER = 13
@@ -201,7 +201,11 @@ def load_config():
                     "wsl_insiders_command": "wsl code-insiders",
                     "windows_insiders_command": "code-insiders.cmd"
                 },
-                "last_selected_option": "normal"  # Default to normal VS Code
+                "last_selected_option": "normal",  # Default to normal VS Code
+                "window_size": {
+                    "width": DEFAULT_APP_WIDTH,
+                    "height": DEFAULT_APP_HEIGHT
+                }
             }
 
             # Ensure directory exists
@@ -359,6 +363,57 @@ def launch_workspace(workspace, wsl, config):
         logger.error(error_msg)
 
 
+def save_window_size(config, width, height):
+    """
+    Save the current window size to the configuration file.
+
+    Args:
+        config: The configuration dictionary
+        width: The current window width
+        height: The current window height
+    """
+    if not config:
+        return
+
+    # Update the configuration with the new window size
+    if "window_size" not in config:
+        config["window_size"] = {}
+
+    config["window_size"]["width"] = width
+    config["window_size"]["height"] = height
+
+    # Save the updated configuration back to the file
+    try:
+        config_path = os.path.join(
+            os.path.dirname(__file__), 'config.json')
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=4)
+        logger.debug(f"Saved window size: {width}x{height}")
+    except Exception as e:
+        logger.error(f"Error saving window size: {str(e)}")
+
+
+def save_window_on_close(sender, app_data, user_data):
+    """
+    Save window dimensions when the application is closed.
+
+    Args:
+        sender: The sender of the callback
+        app_data: Application data
+        user_data: User data
+    """
+    # Get current viewport dimensions
+    window_width = dpg.get_viewport_width()
+    window_height = dpg.get_viewport_height()
+
+    # Save window size to config
+    config = load_config()
+    if config:
+        save_window_size(config, window_width, window_height)
+        logger.debug(
+            f"Saved window size on close: {window_width}x{window_height}")
+
+
 def main():
     """
     Main application entry point. Sets up the UI, loads workspaces,
@@ -371,14 +426,20 @@ def main():
         sys.exit(0)
 
     # Clear marker in logs
-    logger.info("====== APPLICATION STARTING ======")
-
-    # Load configuration
+    logger.info("====== APPLICATION STARTING ======")    # Load configuration
     config = load_config()
     if not config:
         logger.error(
             "Error loading configuration. Please check config.json file.")
         return
+
+    # Get window size from configuration or use defaults
+    window_size = config.get("window_size", {})
+    app_width = window_size.get("width", DEFAULT_APP_WIDTH)
+    app_height = window_size.get("height", DEFAULT_APP_HEIGHT)
+
+    # Calculate default button width based on app width
+    button_width = app_width // 4 - 22
 
     # Navigation instructions
     instructions = ("Q/X/Escape: exit        N/I: Normal/Insiders        "
@@ -406,15 +467,14 @@ def main():
     # Button width calculation values to be adjusted dynamically
     button_width = DEFAULT_BUTTON_WIDTH
     # Track the currently selected button index
-    selected_button_idx = [0]
-
-    # Button collections
+    selected_button_idx = [0]    # Button collections
     wsl_buttons_left = []
     wsl_buttons_right = []
     win_buttons_left = []
     win_buttons_right = []
 
     # Helper function to get all buttons
+
     def get_all_buttons():
         wsl_buttons = get_buttons_list(wsl_buttons_left, wsl_buttons_right)
         win_buttons = get_buttons_list(win_buttons_left, win_buttons_right)
@@ -429,6 +489,7 @@ def main():
         1. Checks if viewport dimensions have changed
         2. Updates panel widths to fill the space
         3. Adjusts button widths for consistent layout
+        4. Saves window size to config when dimensions change
         """
         # Get current viewport dimensions
         window_width = dpg.get_viewport_width()
@@ -455,6 +516,19 @@ def main():
             # Update all button widths
             for button in get_all_buttons():
                 dpg.configure_item(button, width=new_button_width)
+
+            # Save window size to config when user resizes and only save if
+            # significantly different (to avoid constant writes).
+            # The use of the "size_changed" variable is to fix linting issues
+            # (line length/indentation).
+            size_changed = (
+                abs(window_width - app_width) > 10 or
+                abs(window_height - app_height) > 10
+            )
+            if size_changed:
+                save_window_size(config, window_width, window_height)
+                logger.debug(
+                    f"Saved window size: {window_width}x{window_height}")
 
     # Function to update button highlighting when selection changes
     def update_button_selection():
@@ -633,8 +707,9 @@ def main():
             # Restore parent context
             dpg.pop_container_stack()
 
-        return left_buttons, right_buttons    # Workspace panel (WSL/Windows)
+        return left_buttons, right_buttons
 
+    # Workspace panel (WSL/Windows)
     def create_workspace_panel(panel_tag, title_text, workspace_list, is_wsl,
                                left_buttons, right_buttons):
         """Create a workspace panel with buttons
@@ -647,7 +722,7 @@ def main():
             left_buttons: List to store left column buttons
             right_buttons: List to store right column buttons
         """
-        with dpg.child_window(tag=panel_tag, width=APP_WIDTH // 2 - 20,
+        with dpg.child_window(tag=panel_tag, width=app_width // 2 - 20,
                               height=-45, border=True):
             # Add title text
             title = dpg.add_text(title_text)
@@ -686,8 +761,7 @@ def main():
             "Win Workspaces",
             "Windows Workspaces",
             workspaces["Win"],
-            False,
-            win_buttons_left,
+            False,            win_buttons_left,
             win_buttons_right
         )
 
@@ -698,7 +772,7 @@ def main():
         # Using vertical group instead of horizontal to allow text wrapping
         with dpg.group():
             status_text = dpg.add_text(instructions, tag="status_text",
-                                       wrap=APP_WIDTH-20)
+                                       wrap=app_width-20)
             dpg.bind_item_font(status_text, small_font)
 
     def create_radio_control():
@@ -770,9 +844,8 @@ def main():
     # Register key handlers
     with dpg.handler_registry():
         # General key handler
-        dpg.add_key_press_handler(callback=key_handler)
-
         # Tab key - navigate between buttons
+        dpg.add_key_press_handler(callback=key_handler)
         dpg.add_key_press_handler(KEY_TAB, callback=tab_handler)
 
         # Enter key - activate selected button
@@ -784,8 +857,9 @@ def main():
     # Run the app
     icon_path = get_data_file_path("VSCL.ico")
     dpg.create_viewport(
-        title=WINDOW_TITLE, width=APP_WIDTH, height=APP_HEIGHT,
-        resizable=True, min_width=(APP_WIDTH - 100), min_height=APP_HEIGHT,
+        title=WINDOW_TITLE, width=app_width, height=app_height,
+        resizable=True, min_width=(DEFAULT_APP_WIDTH - 40),
+        min_height=DEFAULT_APP_HEIGHT,
         small_icon=icon_path, large_icon=icon_path)
 
     dpg.setup_dearpygui()
@@ -804,6 +878,8 @@ def main():
         adjust_layout()
         dpg.render_dearpygui_frame()
 
+    # Save window size on close
+    save_window_on_close(None, None, None)
     dpg.destroy_context()
 
     # Release mutex when closing the application
