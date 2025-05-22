@@ -1,6 +1,10 @@
 # VS Code Launcher version history
 
-## v.0.11.0 22 May 2025
+## v0.12.0 23 May 2025
+
+- Save and restore window size.
+
+## v0.11.0 22 May 2025
 
 - Make VSCL single-instance.
 
