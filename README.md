@@ -15,17 +15,17 @@ Code Insiders.
 - Quick exit with Q or X keys
 - Automatic workspace detection from a shared directory
 - Configurable paths for Windows and WSL workspaces
-- Dynamic UI that adjusts to window resizing
+- Dynamic UI that adjusts to window resizing and remembers last size
 - Clear visual feedback for selected items
 - Selector for VS Code Insiders or standard VS Code, with the last used
   selection remembered
 - Launches single instance
 
-## Requirements
+## Key Requirements
 
 - Python 3.6+
-- Dear PyGui library
-- VS Code installed on Windows and/or WSL
+- Dear PyGui library (see also `requirements.txt`)
+- VS Code installed on Windows and/or WSL, optionally with Insiders also
 
 ## Configuration
 
@@ -39,13 +39,18 @@ Example configuration:
 
 ```json
 {
-    "windows_workspaces_path": "H:/Development/VS Code workspaces",
-    "wsl_workspaces_path": "/mnt/h/Development/VS Code workspaces",
+    "windows_workspaces_path": "C:/Development/VS Code workspaces",
+    "wsl_workspaces_path": "/mnt/c/Development/VS Code workspaces",
     "launch_options": {
         "wsl_command": "wsl code",
         "windows_command": "code.cmd",
         "wsl_insiders_command": "wsl code-insiders",
         "windows_insiders_command": "code-insiders.cmd"
+    },
+    "last_selected_option": "normal",
+    "window_size": {
+        "width": 460,
+        "height": 300
     }
 }
 ```
@@ -84,9 +89,9 @@ To run the Python script:
 
 ## Keyboard Controls
 
-- **Tab/Shift+Tab**: Navigate between workspace buttons
+- **Tab**: Navigate between workspace buttons
 - **Enter/Space**: Launch the selected workspace
-- **Q/X**: Exit the application
+- **Q/X/Esc**: Exit the application
 
 ## Building the Executable
 
