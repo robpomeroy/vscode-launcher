@@ -382,11 +382,6 @@ def save_window_size(config, width, height):
 def save_window_on_close():
     """
     Save window dimensions when the application is closed.
-
-    Args:
-        sender: The sender of the callback
-        app_data: Application data
-        user_data: User data
     """
     # Get current viewport dimensions
     window_width = dpg.get_viewport_width()
@@ -404,7 +399,7 @@ def is_shift_key_down():
     """
     Use Win32 API to directly check if Shift key is pressed.
     More reliable than dpg.is_key_down for modifier keys.
-    
+
     Returns:
         bool: True if Shift key is down, False otherwise
     """
@@ -433,7 +428,7 @@ def main():
 
     # Clear marker in logs
     logger.info("====== APPLICATION STARTING ======")
-    
+
     # Load configuration
     config = load_config()
     if not config:
@@ -471,10 +466,10 @@ def main():
 
     # Button width calculation values to be adjusted dynamically
     button_width = DEFAULT_BUTTON_WIDTH
-    
+
     # Track the currently selected button index
     selected_button_idx = [0]
-    
+
     # Button collections
     wsl_buttons_left = []
     wsl_buttons_right = []
@@ -556,11 +551,11 @@ def main():
                 dpg.bind_item_theme(button, selected_theme)
             else:                # Other buttons - normal theme
                 dpg.bind_item_theme(button, button_theme)
-        
+
         button_label = dpg.get_item_label(selected_button)
         dpg.set_value("status_text",
                       f"Selected: {button_label}\n{instructions}")
-                      
+
     def tab_handler_press(sender, key_data):
         all_buttons = get_all_buttons()
         if not all_buttons:
@@ -573,18 +568,18 @@ def main():
 
         # Set direction based on shift key state
         direction = -1 if is_shift_down else 1
-        
+
         # Calculate new index with direction
         new_idx = selected_button_idx[0] + direction
         total_buttons = len(all_buttons)        # Wrap around properly
         new_idx = new_idx % total_buttons
-        
+
         # Update selected index
         selected_button_idx[0] = new_idx
-        
+
         # Update button highlighting
         update_button_selection()
-        
+
         return True
 
     def activate_selected_button():
@@ -839,7 +834,7 @@ def main():
             dpg.add_theme_color(dpg.mvThemeCol_Button, [70, 70, 70])
             dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, [100, 100, 100])
             dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, [50, 150, 50])
-    
+
     # Theme for the currently selected button - bright green
     with dpg.theme() as selected_theme:
         with dpg.theme_component(dpg.mvButton):
@@ -848,7 +843,7 @@ def main():
             dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, [0, 180, 70])
             dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, [0, 200, 100])
             dpg.add_theme_color(dpg.mvThemeCol_Text, [255, 255, 255])
-    
+
     # Apply theme to all buttons
     for button in get_all_buttons():
         dpg.bind_item_theme(button, button_theme)
@@ -857,10 +852,10 @@ def main():
     with dpg.handler_registry():
         # General key handler for Q, X, ESC, N, I
         dpg.add_key_press_handler(callback=key_handler)
-        
+
         # Tab to change button focus - use press instead of release
         dpg.add_key_press_handler(KEY_TAB, callback=tab_handler_press)
-        
+
         # Space/Enter to activate button
         dpg.add_key_press_handler(KEY_SPACE, callback=enter_handler)
         dpg.add_key_press_handler(KEY_ENTER, callback=enter_handler)
