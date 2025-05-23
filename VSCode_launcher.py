@@ -25,7 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger('VSCodeLauncher')
 
 # Constants
-VERSION = "v0.12.0"
+VERSION = "v0.12.1"
 WINDOW_TITLE = f"VSCodeLauncher {VERSION}"
 DEFAULT_APP_HEIGHT = 300  # Default height if not specified in config
 DEFAULT_APP_WIDTH = 500   # Default width if not specified in config
@@ -153,20 +153,6 @@ def is_already_running():
         logger.error(f"Error checking for existing instance: {e}")
         # If there's an error, allow the application to run
         return False
-
-
-def get_buttons_list(left_list, right_list):
-    """Combine left and right button lists into a single list.
-    This is a utility function used by several parts of the UI code.
-
-    Args:
-        left_list: List of buttons in the left column
-        right_list: List of buttons in the right column
-
-    Returns:
-        Combined list of all buttons
-    """
-    return left_list + right_list
 
 
 def load_config():
@@ -393,14 +379,9 @@ def save_window_size(config, width, height):
         logger.error(f"Error saving window size: {str(e)}")
 
 
-def save_window_on_close(sender, app_data, user_data):
+def save_window_on_close():
     """
     Save window dimensions when the application is closed.
-
-    Args:
-        sender: The sender of the callback
-        app_data: Application data
-        user_data: User data
     """
     # Get current viewport dimensions
     window_width = dpg.get_viewport_width()
@@ -412,6 +393,26 @@ def save_window_on_close(sender, app_data, user_data):
         save_window_size(config, window_width, window_height)
         logger.debug(
             f"Saved window size on close: {window_width}x{window_height}")
+
+
+def is_shift_key_down():
+    """
+    Use Win32 API to directly check if Shift key is pressed.
+    More reliable than dpg.is_key_down for modifier keys.
+
+    Returns:
+        bool: True if Shift key is down, False otherwise
+    """
+    try:
+        # Windows virtual key code for Shift: VK_SHIFT (0x10 or 16)
+        VK_SHIFT = 0x10
+        # Get the state of the Shift key using Win32 API
+        shift_state = ctypes.windll.user32.GetKeyState(VK_SHIFT)
+        # Check if the high-order bit is set (key is down)
+        return (shift_state & 0x8000) != 0
+    except Exception as e:
+        logger.error(f"Error checking Shift key state: {e}")
+        return False
 
 
 def main():
@@ -426,7 +427,9 @@ def main():
         sys.exit(0)
 
     # Clear marker in logs
-    logger.info("====== APPLICATION STARTING ======")    # Load configuration
+    logger.info("====== APPLICATION STARTING ======")
+
+    # Load configuration
     config = load_config()
     if not config:
         logger.error(
@@ -437,9 +440,6 @@ def main():
     window_size = config.get("window_size", {})
     app_width = window_size.get("width", DEFAULT_APP_WIDTH)
     app_height = window_size.get("height", DEFAULT_APP_HEIGHT)
-
-    # Calculate default button width based on app width
-    button_width = app_width // 4 - 22
 
     # Navigation instructions
     instructions = ("Q/X/Escape: exit        N/I: Normal/Insiders        "
@@ -466,8 +466,11 @@ def main():
 
     # Button width calculation values to be adjusted dynamically
     button_width = DEFAULT_BUTTON_WIDTH
+
     # Track the currently selected button index
-    selected_button_idx = [0]    # Button collections
+    selected_button_idx = [0]
+
+    # Button collections
     wsl_buttons_left = []
     wsl_buttons_right = []
     win_buttons_left = []
@@ -476,8 +479,8 @@ def main():
     # Helper function to get all buttons
 
     def get_all_buttons():
-        wsl_buttons = get_buttons_list(wsl_buttons_left, wsl_buttons_right)
-        win_buttons = get_buttons_list(win_buttons_left, win_buttons_right)
+        wsl_buttons = wsl_buttons_left + wsl_buttons_right
+        win_buttons = win_buttons_left + win_buttons_right
         return wsl_buttons + win_buttons
 
     # Define function to adjust widths based on viewport
@@ -519,8 +522,6 @@ def main():
 
             # Save window size to config when user resizes and only save if
             # significantly different (to avoid constant writes).
-            # The use of the "significant_size_changed" variable is to fix
-            # linting issues (line length/indentation).
             significant_size_changed = (
                 abs(window_width - app_width) > 10 or
                 abs(window_height - app_height) > 10
@@ -529,6 +530,9 @@ def main():
                 save_window_size(config, window_width, window_height)
                 logger.debug(
                     f"Saved window size: {window_width}x{window_height}")
+
+            # Re-apply button themes and selection after resize
+            update_button_selection()
 
     # Function to update button highlighting when selection changes
     def update_button_selection():
@@ -545,28 +549,33 @@ def main():
             if button == selected_button:
                 # Selected button - highlight it
                 dpg.bind_item_theme(button, selected_theme)
-            else:
-                # Other buttons - normal theme
+            else:                # Other buttons - normal theme
                 dpg.bind_item_theme(button, button_theme)
+
         button_label = dpg.get_item_label(selected_button)
         dpg.set_value("status_text",
                       f"Selected: {button_label}\n{instructions}")
 
-    # Handle Tab key to move selection
-    def tab_handler(sender, key_data):
+    def tab_handler_press(sender, key_data):
         all_buttons = get_all_buttons()
         if not all_buttons:
-            return
+            return False
 
+        # Use the Win32 API function to check if Shift key is down
+        is_shift_down = is_shift_key_down()
         logger.debug(f"Tab pressed! sender={sender}, key_data={key_data}")
+        logger.debug(f"Shift key is down (Win32 API): {is_shift_down}")
 
-        # Check if Shift is held
-        shift_held = dpg.is_key_down(KEY_SHIFT)
-        direction = -1 if shift_held else 1
+        # Set direction based on shift key state
+        direction = -1 if is_shift_down else 1
+
+        # Calculate new index with direction
+        new_idx = selected_button_idx[0] + direction
+        total_buttons = len(all_buttons)        # Wrap around properly
+        new_idx = new_idx % total_buttons
 
         # Update selected index
-        selected_button_idx[0] = ((selected_button_idx[0] + direction)
-                                  % len(all_buttons))
+        selected_button_idx[0] = new_idx
 
         # Update button highlighting
         update_button_selection()
@@ -639,6 +648,7 @@ def main():
                 logger.error("Radio button with tag 'code_version_selector' "
                              "does not exist!")
             return True
+
         # Handle 'I' key to select Insiders VS Code version
         elif key_pressed == KEY_I:  # Dear PyGui key code for 'I'
             logger.info(f"Key press recognized as I ({key_pressed}), "
@@ -742,9 +752,7 @@ def main():
             left_buttons.extend(left)
             right_buttons.extend(right)
 
-    # Create WSL workspace panel
     def create_wsl_panel():
-        """Create the WSL workspaces panel"""
         create_workspace_panel(
             "WSL Workspaces",
             "WSL Workspaces",
@@ -754,9 +762,7 @@ def main():
             wsl_buttons_right
         )
 
-    # Create Windows workspace panel
     def create_windows_panel():
-        """Create the Windows workspaces panel"""
         create_workspace_panel(
             "Win Workspaces",
             "Windows Workspaces",
@@ -841,18 +847,18 @@ def main():
     # Apply theme to all buttons
     for button in get_all_buttons():
         dpg.bind_item_theme(button, button_theme)
+
     # Register key handlers
     with dpg.handler_registry():
-        # General key handler
-        # Tab key - navigate between buttons
+        # General key handler for Q, X, ESC, N, I
         dpg.add_key_press_handler(callback=key_handler)
-        dpg.add_key_press_handler(KEY_TAB, callback=tab_handler)
 
-        # Enter key - activate selected button
-        dpg.add_key_press_handler(KEY_ENTER, callback=enter_handler)
+        # Tab to change button focus - use press instead of release
+        dpg.add_key_press_handler(KEY_TAB, callback=tab_handler_press)
 
-        # Space key - also activate selected button
+        # Space/Enter to activate button
         dpg.add_key_press_handler(KEY_SPACE, callback=enter_handler)
+        dpg.add_key_press_handler(KEY_ENTER, callback=enter_handler)
 
     # Run the app
     icon_path = get_data_file_path("VSCL.ico")
@@ -879,7 +885,7 @@ def main():
         dpg.render_dearpygui_frame()
 
     # Save window size on close
-    save_window_on_close(None, None, None)
+    save_window_on_close()
     dpg.destroy_context()
 
     # Release mutex when closing the application
