@@ -2,7 +2,7 @@
 
 ## v0.12.1 23 May 2025
 
-- Fix shift-TAB navigation.
+- Fix shift-TAB navigation (using Win32 `GetKeyState` API)
 
 ## v0.12.0 23 May 2025
 
