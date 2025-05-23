@@ -155,20 +155,6 @@ def is_already_running():
         return False
 
 
-def get_buttons_list(left_list, right_list):
-    """Combine left and right button lists into a single list.
-    This is a utility function used by several parts of the UI code.
-
-    Args:
-        left_list: List of buttons in the left column
-        right_list: List of buttons in the right column
-
-    Returns:
-        Combined list of all buttons
-    """
-    return left_list + right_list
-
-
 def load_config():
     """
     Load configuration from config.json file.
@@ -393,7 +379,7 @@ def save_window_size(config, width, height):
         logger.error(f"Error saving window size: {str(e)}")
 
 
-def save_window_on_close(sender, app_data, user_data):
+def save_window_on_close():
     """
     Save window dimensions when the application is closed.
 
@@ -446,7 +432,9 @@ def main():
         sys.exit(0)
 
     # Clear marker in logs
-    logger.info("====== APPLICATION STARTING ======")    # Load configuration
+    logger.info("====== APPLICATION STARTING ======")
+    
+    # Load configuration
     config = load_config()
     if not config:
         logger.error(
@@ -457,9 +445,6 @@ def main():
     window_size = config.get("window_size", {})
     app_width = window_size.get("width", DEFAULT_APP_WIDTH)
     app_height = window_size.get("height", DEFAULT_APP_HEIGHT)
-
-    # Calculate default button width based on app width
-    button_width = app_width // 4 - 22
 
     # Navigation instructions
     instructions = ("Q/X/Escape: exit        N/I: Normal/Insiders        "
@@ -490,9 +475,6 @@ def main():
     # Track the currently selected button index
     selected_button_idx = [0]
     
-    # Track shift key state
-    shift_pressed = [False]
-
     # Button collections
     wsl_buttons_left = []
     wsl_buttons_right = []
@@ -502,8 +484,8 @@ def main():
     # Helper function to get all buttons
 
     def get_all_buttons():
-        wsl_buttons = get_buttons_list(wsl_buttons_left, wsl_buttons_right)
-        win_buttons = get_buttons_list(win_buttons_left, win_buttons_right)
+        wsl_buttons = wsl_buttons_left + wsl_buttons_right
+        win_buttons = win_buttons_left + win_buttons_right
         return wsl_buttons + win_buttons
 
     # Define function to adjust widths based on viewport
@@ -579,17 +561,6 @@ def main():
         dpg.set_value("status_text",
                       f"Selected: {button_label}\n{instructions}")
                       
-    # Handle Tab key to move selection
-    def shift_handler_press(sender, key_data):
-        logger.debug(f"Shift pressed! sender={sender}, key_data={key_data}")
-        shift_pressed[0] = True
-        return True
-    
-    def shift_handler_release(sender, key_data):
-        logger.debug(f"Shift released! sender={sender}, key_data={key_data}")
-        shift_pressed[0] = False
-        return True
-    
     def tab_handler_press(sender, key_data):
         all_buttons = get_all_buttons()
         if not all_buttons:
@@ -786,9 +757,7 @@ def main():
             left_buttons.extend(left)
             right_buttons.extend(right)
 
-    # Create WSL workspace panel
     def create_wsl_panel():
-        """Create the WSL workspaces panel"""
         create_workspace_panel(
             "WSL Workspaces",
             "WSL Workspaces",
@@ -798,9 +767,7 @@ def main():
             wsl_buttons_right
         )
 
-    # Create Windows workspace panel
     def create_windows_panel():
-        """Create the Windows workspaces panel"""
         create_workspace_panel(
             "Win Workspaces",
             "Windows Workspaces",
@@ -884,14 +851,12 @@ def main():
     
     # Apply theme to all buttons
     for button in get_all_buttons():
-        dpg.bind_item_theme(button, button_theme)    # Register key handlers
+        dpg.bind_item_theme(button, button_theme)
+
+    # Register key handlers
     with dpg.handler_registry():
         # General key handler for Q, X, ESC, N, I
         dpg.add_key_press_handler(callback=key_handler)
-        
-        # Register Shift key handlers
-        dpg.add_key_press_handler(KEY_SHIFT, callback=shift_handler_press)
-        dpg.add_key_release_handler(KEY_SHIFT, callback=shift_handler_release)
         
         # Tab to change button focus - use press instead of release
         dpg.add_key_press_handler(KEY_TAB, callback=tab_handler_press)
@@ -925,7 +890,7 @@ def main():
         dpg.render_dearpygui_frame()
 
     # Save window size on close
-    save_window_on_close(None, None, None)
+    save_window_on_close()
     dpg.destroy_context()
 
     # Release mutex when closing the application
