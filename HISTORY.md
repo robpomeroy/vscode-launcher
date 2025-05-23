@@ -1,5 +1,9 @@
 # VS Code Launcher version history
 
+## v0.12.1 23 May 2025
+
+- Fix shift-TAB navigation.
+
 ## v0.12.0 23 May 2025
 
 - Save and restore window size.
