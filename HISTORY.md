@@ -1,5 +1,9 @@
 # VS Code Launcher version history
 
+## v0.12.2 6 June 2025
+
+- Fix bug with compiled program not correctly saving window size changes.
+
 ## v0.12.1 23 May 2025
 
 - Fix shift-TAB navigation (using Win32 `GetKeyState` API)

@@ -25,7 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger('VSCodeLauncher')
 
 # Constants
-VERSION = "v0.12.1"
+VERSION = "v0.12.2"
 WINDOW_TITLE = f"VSCodeLauncher {VERSION}"
 DEFAULT_APP_HEIGHT = 300  # Default height if not specified in config
 DEFAULT_APP_WIDTH = 500   # Default width if not specified in config
@@ -155,32 +155,19 @@ def is_already_running():
         return False
 
 
-def load_config():
+def load_config(config_path: str):
     """
     Load configuration from config.json file.
 
     Note: abspath() used to avoid path traversal issues.
     """
     try:
-        if hasattr(sys, '_MEIPASS'):
-            # Running from PyInstaller bundle; config should be in the same
-            # directory as the executable.
-            config_path = os.path.join(
-                os.path.abspath(
-                    os.path.dirname(sys.executable)), 'config.json')
-        else:
-            # Running in normal Python environment; config should be in the
-            # same directory as this script.
-            base_dir = os.path.abspath(os.path.dirname(__file__))
-            config_path = os.path.abspath(
-                os.path.join(base_dir, 'config.json'))
-
         # Create default config if it doesn't exist
         if not os.path.exists(config_path):
             # Extend the configuration to include VS Code Insiders commands
             default_config = {
-                "windows_workspaces_path": "H:/Development/VS Code workspaces",
-                "wsl_workspaces_path": "/mnt/h/Development/VS Code workspaces",
+                "windows_workspaces_path": "C:/Development/VS Code workspaces",
+                "wsl_workspaces_path": "/mnt/c/Development/VS Code workspaces",
                 "launch_options": {
                     "wsl_command": "wsl code",
                     "windows_command": "code.cmd",
@@ -256,7 +243,7 @@ def get_workspaces(config):
     - "Win": List of tuples (display_name, filename) for Windows workspaces
     '''
     windows_path = config.get("windows_workspaces_path",
-                              "H:/Development/VS Code workspaces")
+                              "C:/Development/VS Code workspaces")
 
     workspaces = {
         "WSL": [],
@@ -292,9 +279,9 @@ def launch_workspace(workspace, wsl, config):
     '''
     # Get configuration values
     windows_path = config.get("windows_workspaces_path",
-                              "H:/Development/VS Code workspaces")
+                              "C:/Development/VS Code workspaces")
     wsl_path = config.get("wsl_workspaces_path",
-                          "/mnt/h/Development/VS Code workspaces")
+                          "/mnt/c/Development/VS Code workspaces")
     launch_options = config.get("launch_options", {})
 
     # Validate workspace filename to prevent command injection
@@ -349,12 +336,13 @@ def launch_workspace(workspace, wsl, config):
         logger.error(error_msg)
 
 
-def save_window_size(config, width, height):
+def save_window_size(config, config_path, width, height):
     """
     Save the current window size to the configuration file.
 
     Args:
         config: The configuration dictionary
+        config_path: The path to the configuration file
         width: The current window width
         height: The current window height
     """
@@ -370,8 +358,6 @@ def save_window_size(config, width, height):
 
     # Save the updated configuration back to the file
     try:
-        config_path = os.path.join(
-            os.path.dirname(__file__), 'config.json')
         with open(config_path, 'w') as f:
             json.dump(config, f, indent=4)
         logger.debug(f"Saved window size: {width}x{height}")
@@ -379,7 +365,7 @@ def save_window_size(config, width, height):
         logger.error(f"Error saving window size: {str(e)}")
 
 
-def save_window_on_close():
+def save_window_on_close(config_path):
     """
     Save window dimensions when the application is closed.
     """
@@ -388,9 +374,9 @@ def save_window_on_close():
     window_height = dpg.get_viewport_height()
 
     # Save window size to config
-    config = load_config()
+    config = load_config(config_path)
     if config:
-        save_window_size(config, window_width, window_height)
+        save_window_size(config, config_path, window_width, window_height)
         logger.debug(
             f"Saved window size on close: {window_width}x{window_height}")
 
@@ -429,8 +415,25 @@ def main():
     # Clear marker in logs
     logger.info("====== APPLICATION STARTING ======")
 
+    # Calculate the path to the config file based on whether we're running
+    # from a PyInstaller bundle or a normal Python environment. (Slightly
+    # different from the get_data_file_path() function's logic.)
+    if hasattr(sys, '_MEIPASS'):
+        # Running from PyInstaller bundle; config should be in the same
+        # directory as the executable.
+        config_path = os.path.join(
+            os.path.abspath(
+                os.path.dirname(sys.executable)), 'config.json')
+    else:
+        # Running in normal Python environment; config should be in the
+        # same directory as this script.
+        base_dir = os.path.abspath(os.path.dirname(__file__))
+        config_path = os.path.abspath(
+            os.path.join(base_dir, 'config.json'))
+    logger.debug(f"Using config path: {config_path}")
+
     # Load configuration
-    config = load_config()
+    config = load_config(config_path)
     if not config:
         logger.error(
             "Error loading configuration. Please check config.json file.")
@@ -527,7 +530,8 @@ def main():
                 abs(window_height - app_height) > 10
             )
             if significant_size_changed:
-                save_window_size(config, window_width, window_height)
+                save_window_size(config, config_path, window_width,
+                                 window_height)
                 logger.debug(
                     f"Saved window size: {window_width}x{window_height}")
 
@@ -608,7 +612,7 @@ def main():
                      f"key_data={key_data}")
         return activate_selected_button()
 
-    def key_handler(sender, key_data):
+    def key_handler(sender, key_data, config_path):
         """
         Handle key presses for exiting the application and selecting VS Code
         versions.
@@ -636,7 +640,7 @@ def main():
                 # Log new value after change
                 new_value = dpg.get_value("code_version_selector")
                 logger.info(f"New radio button value: {new_value}")
-                update_last_selected_option("normal")
+                update_last_selected_option("normal", config_path)
                 # Update status text to indicate current selection
                 dpg.set_value(
                     "status_text",
@@ -662,7 +666,7 @@ def main():
                 # Log new value after change
                 new_value = dpg.get_value("code_version_selector")
                 logger.info(f"New radio button value: {new_value}")
-                update_last_selected_option("insiders")
+                update_last_selected_option("insiders", config_path)
                 # Update status text to indicate current selection
                 dpg.set_value(
                     "status_text",
@@ -781,7 +785,7 @@ def main():
                                        wrap=app_width-20)
             dpg.bind_item_font(status_text, small_font)
 
-    def create_radio_control():
+    def create_radio_control(config_path):
         """
         Create a horizontal radio control for selecting VS Code or VS Code
         Insiders.
@@ -800,24 +804,24 @@ def main():
                 items=["Normal", "Insiders"],
                 default_value=default_value,
                 callback=lambda sender,
-                app_data: update_last_selected_option(app_data),
+                app_data: update_last_selected_option(app_data, config_path),
                 tag="code_version_selector",
                 horizontal=True
             )
             logger.info(f"Radio button created with ID: {radio_button}")
 
-    def update_last_selected_option(selected_option):
+    def update_last_selected_option(selected_option, config_path):
         """Update the last selected option in the configuration."""
+
+        # Note: config is defined in the outer scope. See the line
+        # config = load_config(config_path)
         config["last_selected_option"] = selected_option.lower()
-        # Save the updated configuration back to the file
-        config_path = os.path.join(
-            os.path.dirname(__file__), 'config.json')
         with open(config_path, 'w') as f:
             json.dump(config, f, indent=4)
 
     # Main window
     with dpg.window(tag="Primary Window"):
-        create_radio_control()
+        create_radio_control(config_path)
         with dpg.group():
             # Workspace area (horizontal layout for WSL and Windows)
             with dpg.group(horizontal=True):
@@ -851,7 +855,9 @@ def main():
     # Register key handlers
     with dpg.handler_registry():
         # General key handler for Q, X, ESC, N, I
-        dpg.add_key_press_handler(callback=key_handler)
+        dpg.add_key_press_handler(
+            callback=lambda sender, key_data:  # DPG sends two args to lambda
+            key_handler(sender, key_data, config_path))
 
         # Tab to change button focus - use press instead of release
         dpg.add_key_press_handler(KEY_TAB, callback=tab_handler_press)
@@ -885,7 +891,7 @@ def main():
         dpg.render_dearpygui_frame()
 
     # Save window size on close
-    save_window_on_close()
+    save_window_on_close(config_path)
     dpg.destroy_context()
 
     # Release mutex when closing the application
