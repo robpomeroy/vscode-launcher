@@ -812,6 +812,9 @@ def main():
 
     def update_last_selected_option(selected_option, config_path):
         """Update the last selected option in the configuration."""
+
+        # Note: config is defined in the outer scope. See the line
+        # config = load_config(config_path)
         config["last_selected_option"] = selected_option.lower()
         with open(config_path, 'w') as f:
             json.dump(config, f, indent=4)
