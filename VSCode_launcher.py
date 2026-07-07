@@ -645,17 +645,18 @@ def main():
                     target_btn = nav_grids[group][row]["right"]
                 elif col == "right" and idx + 1 < len(nav_group_order):
                     # Cross-group: leap to next group's left column on same
-                    # row.
+                    # row. Use safe lookup so navigation is a no-op (not a
+                    # crash) when the target group has fewer rows.
                     next_group = nav_group_order[idx + 1]
-                    target_btn = nav_grids[next_group][row]["left"]
+                    target_btn = nav_grids[next_group].get(row, {}).get("left")
             else:  # left
                 if col == "right":
                     target_btn = nav_grids[group][row]["left"]
                 elif col == "left" and idx - 1 >= 0:
                     # Cross-group: leap to previous group's right column on
-                    # same row.
+                    # same row. Use safe lookup for the same reason.
                     prev_group = nav_group_order[idx - 1]
-                    target_btn = nav_grids[prev_group][row]["right"]
+                    target_btn = nav_grids[prev_group].get(row, {}).get("right")
         elif direction in ("up", "down"):
             row_delta = -1 if direction == "up" else 1
             new_row = row + row_delta
