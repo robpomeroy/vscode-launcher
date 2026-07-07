@@ -1037,11 +1037,19 @@ def main():
 
     # Build the navigation model (alphabetical tab order + 2-column grids).
     # Wrapped so any failure here cannot prevent key handler registration
-    # below (which would break ALL keyboard input).
+    # below (which would break ALL keyboard input). On failure, clear the
+    # partially-populated nav state so get_all_buttons() reliably falls back
+    # to creation order, and log with full traceback for diagnosability.
     try:
         build_navigation_model()
-    except Exception as nav_err:
-        logger.error(f"Failed to build navigation model: {nav_err}")
+    except Exception:
+        nav_tab_sequence.clear()
+        nav_button_info.clear()
+        nav_idx_by_button.clear()
+        nav_grids.clear()
+        nav_group_order.clear()
+        logger.exception("Failed to build navigation model; "
+                         "falling back to creation-order navigation")
 
     # Register key handlers
     with dpg.handler_registry():
