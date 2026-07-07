@@ -480,14 +480,19 @@ def main():
     app_width = window_size.get("width", DEFAULT_APP_WIDTH)
     app_height = window_size.get("height", DEFAULT_APP_HEIGHT)
 
-    # Navigation instructions
-    instructions = ("Q/X/Escape: exit        N/I: Normal/Insiders        "
-                    "[Shift-]Tab/Arrows: navigate        Enter/Space: select")
-
     # Initialise the DearPyGui context and get the list of workspaces
     dpg.create_context()
     _resolve_key_constants()
     workspaces = get_workspaces(config)
+
+    # Navigation instructions — computed after _resolve_key_constants() so the
+    # arrow hint only appears when arrow key handlers will actually be
+    # registered.
+    _arrows_available = all(
+        k is not None for k in (KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT))
+    _nav_hint = "[Shift-]Tab/Arrows" if _arrows_available else "[Shift-]Tab"
+    instructions = (f"Q/X/Escape: exit        N/I: Normal/Insiders        "
+                    f"{_nav_hint}: navigate        Enter/Space: select")
 
     # Custom fonts
     bold_font = get_data_file_path("Manrope-Bold.ttf")
@@ -1066,7 +1071,7 @@ def main():
         dpg.add_key_press_handler(KEY_ENTER, callback=enter_handler)
 
         # Arrow keys to move button focus (if supported by this DearPyGUI build)
-        if all(k is not None for k in (KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT)):
+        if _arrows_available:
             dpg.add_key_press_handler(
                 KEY_UP, callback=lambda s, k: arrow_navigate("up"))
             dpg.add_key_press_handler(
