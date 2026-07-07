@@ -89,7 +89,7 @@ To run the Python script:
 
 ## Keyboard Controls
 
-- **Tab**/**Shift-tab** (and cursor keys where supported by DearPyGUI): Navigate
+- **Tab**/**Shift-tab** (and arrow keys where supported by DearPyGUI): Navigate
   between workspace buttons
 - **Enter/Space**: Launch the selected workspace
 - **Q/X/Esc**: Exit the application

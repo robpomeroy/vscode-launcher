@@ -35,7 +35,6 @@ DEFAULT_BUTTON_WIDTH = DEFAULT_APP_WIDTH // 4 - 22
 # (see _resolve_key_constants() below) so they always match the installed
 # DearPyGUI version's internal key mapping. These module-level names are
 # populated after dpg.create_context() has been called.
-KEY_SHIFT = None
 KEY_TAB = None
 KEY_ENTER = None
 KEY_SPACE = None
@@ -53,16 +52,15 @@ KEY_RIGHT = None
 def _resolve_key_constants():
     """
     Populate the KEY_* module-level constants from DearPyGUI's mvKey_*
-    constants. Must be called after dpg.create_context() so that the
-    internal_dpg symbols are available.
+    constants. Must be called after dpg.create_context() so the mvKey_*
+    constants are available.
     """
-    global KEY_SHIFT, KEY_TAB, KEY_ENTER, KEY_SPACE, KEY_ESCAPE
+    global KEY_TAB, KEY_ENTER, KEY_SPACE, KEY_ESCAPE
     global KEY_I, KEY_N, KEY_Q, KEY_X
     global KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT
 
     # Prefer DearPyGUI key constants when available; fall back to legacy
     # numeric codes so the launcher keeps working across DearPyGUI versions.
-    KEY_SHIFT = getattr(dpg, "mvKey_LShift", 16)
     KEY_TAB = getattr(dpg, "mvKey_Tab", 9)
     KEY_ENTER = getattr(dpg, "mvKey_Return", 13)
     KEY_SPACE = getattr(dpg, "mvKey_Spacebar", 32)
@@ -1053,6 +1051,9 @@ def main():
         nav_idx_by_button.clear()
         nav_grids.clear()
         nav_group_order.clear()
+        _arrows_available = False
+        instructions = ("Q/X/Escape: exit        N/I: Normal/Insiders        "
+                        "[Shift-]Tab: navigate        Enter/Space: select")
         logger.exception("Failed to build navigation model; "
                          "falling back to creation-order navigation")
 
