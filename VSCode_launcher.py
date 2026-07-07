@@ -25,20 +25,54 @@ logging.basicConfig(
 logger = logging.getLogger('VSCodeLauncher')
 
 # Constants
-VERSION = "v0.12.2"
+VERSION = "v0.13.0"
 WINDOW_TITLE = f"VSCodeLauncher {VERSION}"
 DEFAULT_APP_HEIGHT = 300  # Default height if not specified in config
 DEFAULT_APP_WIDTH = 500   # Default width if not specified in config
 DEFAULT_BUTTON_WIDTH = DEFAULT_APP_WIDTH // 4 - 22
-KEY_SHIFT = 16
-KEY_TAB = 9
-KEY_ENTER = 13
-KEY_SPACE = 32
-KEY_ESCAPE = 526
-KEY_I = 554
-KEY_N = 559
-KEY_Q = 562
-KEY_X = 569
+
+# Key codes are resolved from DearPyGUI's own mvKey_* constants at runtime
+# (see _resolve_key_constants() below) so they always match the installed
+# DearPyGUI version's internal key mapping. These module-level names are
+# populated after dpg.create_context() has been called.
+KEY_TAB = None
+KEY_ENTER = None
+KEY_SPACE = None
+KEY_ESCAPE = None
+KEY_I = None
+KEY_N = None
+KEY_Q = None
+KEY_X = None
+KEY_UP = None
+KEY_DOWN = None
+KEY_LEFT = None
+KEY_RIGHT = None
+
+
+def _resolve_key_constants():
+    """
+    Populate the KEY_* module-level constants from DearPyGUI's mvKey_*
+    constants. Must be called after dpg.create_context() so the mvKey_*
+    constants are available.
+    """
+    global KEY_TAB, KEY_ENTER, KEY_SPACE, KEY_ESCAPE
+    global KEY_I, KEY_N, KEY_Q, KEY_X
+    global KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT
+
+    # Prefer DearPyGUI key constants when available; fall back to legacy
+    # numeric codes so the launcher keeps working across DearPyGUI versions.
+    KEY_TAB = getattr(dpg, "mvKey_Tab", 9)
+    KEY_ENTER = getattr(dpg, "mvKey_Return", 13)
+    KEY_SPACE = getattr(dpg, "mvKey_Spacebar", 32)
+    KEY_ESCAPE = getattr(dpg, "mvKey_Escape", 526)
+    KEY_I = getattr(dpg, "mvKey_I", 554)
+    KEY_N = getattr(dpg, "mvKey_N", 559)
+    KEY_Q = getattr(dpg, "mvKey_Q", 562)
+    KEY_X = getattr(dpg, "mvKey_X", 569)
+    KEY_UP = getattr(dpg, "mvKey_Up", None)
+    KEY_DOWN = getattr(dpg, "mvKey_Down", None)
+    KEY_LEFT = getattr(dpg, "mvKey_Left", None)
+    KEY_RIGHT = getattr(dpg, "mvKey_Right", None)
 
 
 def find_and_activate_window():
@@ -444,13 +478,19 @@ def main():
     app_width = window_size.get("width", DEFAULT_APP_WIDTH)
     app_height = window_size.get("height", DEFAULT_APP_HEIGHT)
 
-    # Navigation instructions
-    instructions = ("Q/X/Escape: exit        N/I: Normal/Insiders        "
-                    "Tab: navigate        Enter/Space: select")
-
     # Initialise the DearPyGui context and get the list of workspaces
     dpg.create_context()
+    _resolve_key_constants()
     workspaces = get_workspaces(config)
+
+    # Navigation instructions — computed after _resolve_key_constants() so the
+    # arrow hint only appears when arrow key handlers will actually be
+    # registered.
+    _arrows_available = all(
+        k is not None for k in (KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT))
+    _nav_hint = "[Shift-]Tab/Arrows" if _arrows_available else "[Shift-]Tab"
+    instructions = (f"Q/X/Escape: exit        N/I: Normal/Insiders        "
+                    f"{_nav_hint}: navigate        Enter/Space: select")
 
     # Custom fonts
     bold_font = get_data_file_path("Manrope-Bold.ttf")
@@ -479,12 +519,158 @@ def main():
     win_buttons_left = []
     win_buttons_right = []
 
+    # Navigation model: tab sequence (alphabetical by label, WSL then Windows),
+    # and per-group grid coordinates for arrow key movement.
+    nav_tab_sequence = []          # List of button ids in tab order
+    nav_button_info = {}           # button id -> {"group", "row", "col"}
+    nav_idx_by_button = {}         # button id -> index in nav_tab_sequence
+    nav_grids = {}                 # group -> {row: {"left": btn, "right": btn}}
+    nav_group_order = []           # Ordered list of group names for traversal
+
     # Helper function to get all buttons
 
     def get_all_buttons():
+        # Returns the explicit tab sequence when available, otherwise falls
+        # back to the original creation order during initial UI setup.
+        if nav_tab_sequence:
+            return list(nav_tab_sequence)
         wsl_buttons = wsl_buttons_left + wsl_buttons_right
         win_buttons = win_buttons_left + win_buttons_right
         return wsl_buttons + win_buttons
+
+    def _sorted_label_key(button_id):
+        try:
+            label = dpg.get_item_label(button_id) or ""
+        except Exception:
+            label = ""
+        return (label.casefold(), str(button_id))
+
+    def _build_group_grid(button_list):
+        """
+        Build a 2-column grid model from a sorted list of buttons.
+        Returns (grid, col_left, col_right) where each is a list of button ids
+        in row-major order (so element at index i represents row i, and the
+        longer column determines the in-group row count).
+        """
+        col_left = []
+        col_right = []
+        for i, btn in enumerate(button_list):
+            (col_left if i % 2 == 0 else col_right).append(btn)
+        row_count = max(len(col_left), len(col_right))
+        grid = {}
+        # Build row -> (left, right) mapping for this group.
+        for row in range(row_count):
+            left_btn = col_left[row] if row < len(col_left) else None
+            right_btn = col_right[row] if row < len(col_right) else None
+            grid[row] = {"left": left_btn, "right": right_btn}
+        return grid, col_left, col_right
+
+    def build_navigation_model():
+        """
+        Build the explicit tab sequence and arrow-key grid model after the
+        buttons have been created. Tab order is alphabetical by visible label
+        within each group (WSL first, then Windows).
+        """
+        nav_tab_sequence.clear()
+        nav_button_info.clear()
+        nav_idx_by_button.clear()
+        nav_grids.clear()
+        nav_group_order.clear()
+
+        # Sort within each group independently.
+        wsl_sorted = sorted(wsl_buttons_left + wsl_buttons_right,
+                            key=_sorted_label_key)
+        win_sorted = sorted(win_buttons_left + win_buttons_right,
+                            key=_sorted_label_key)
+
+        # Group order for tab traversal: WSL, then Windows.
+        group_order = [("WSL", wsl_sorted), ("Win", win_sorted)]
+
+        wsl_grid, _, _ = _build_group_grid(wsl_sorted)
+        win_grid, _, _ = _build_group_grid(win_sorted)
+        grids = {"WSL": wsl_grid, "Win": win_grid}
+
+        for group_name, _ in group_order:
+            nav_group_order.append(group_name)
+            nav_grids[group_name] = grids[group_name]
+            grid = grids[group_name]
+            for row, cell in grid.items():
+                for col_name in ("left", "right"):
+                    btn = cell[col_name]
+                    if btn is None:
+                        continue
+                    nav_button_info[btn] = {
+                        "group": group_name,
+                        "row": row,
+                        "col": col_name,
+                    }
+                    nav_idx_by_button[btn] = len(nav_tab_sequence)
+                    nav_tab_sequence.append(btn)
+
+    def move_selection_to_button(button_id):
+        """
+        Update the selected index so that the given button is highlighted.
+        No-op if the button is not in the navigation model.
+        """
+        if button_id in nav_idx_by_button:
+            selected_button_idx[0] = nav_idx_by_button[button_id]
+            update_button_selection()
+            return True
+        return False
+
+    def get_current_button():
+        all_buttons = get_all_buttons()
+        if not all_buttons:
+            return None
+        idx = selected_button_idx[0] % len(all_buttons)
+        return all_buttons[idx]
+
+    def arrow_navigate(direction):
+        """
+        Move selection based on arrow key direction using the grid model.
+        direction: one of 'up', 'down', 'left', 'right'.
+        Returns True if the selection moved.
+        """
+        current_btn = get_current_button()
+        if current_btn is None or current_btn not in nav_button_info:
+            return False
+
+        info = nav_button_info[current_btn]
+        group = info["group"]
+        row = info["row"]
+        col = info["col"]
+
+        target_btn = None
+
+        if direction in ("left", "right"):
+            idx = nav_group_order.index(group)
+            if direction == "right":
+                if col == "left":
+                    # Move to right column on same row in same group.
+                    target_btn = nav_grids[group][row]["right"]
+                elif col == "right" and idx + 1 < len(nav_group_order):
+                    # Cross-group: leap to next group's left column on same
+                    # row. Use safe lookup so navigation is a no-op (not a
+                    # crash) when the target group has fewer rows.
+                    next_group = nav_group_order[idx + 1]
+                    target_btn = nav_grids[next_group].get(row, {}).get("left")
+            else:  # left
+                if col == "right":
+                    target_btn = nav_grids[group][row]["left"]
+                elif col == "left" and idx - 1 >= 0:
+                    # Cross-group: leap to previous group's right column on
+                    # same row. Use safe lookup for the same reason.
+                    prev_group = nav_group_order[idx - 1]
+                    target_btn = nav_grids[prev_group].get(row, {}).get("right")
+        elif direction in ("up", "down"):
+            row_delta = -1 if direction == "up" else 1
+            new_row = row + row_delta
+            target_btn = nav_grids[group].get(new_row, {}).get(col)
+
+        if target_btn is None or target_btn == current_btn:
+            return False
+
+        return move_selection_to_button(target_btn)
 
     # Define function to adjust widths based on viewport
     def adjust_layout():
@@ -852,6 +1038,25 @@ def main():
     for button in get_all_buttons():
         dpg.bind_item_theme(button, button_theme)
 
+    # Build the navigation model (alphabetical tab order + 2-column grids).
+    # Wrapped so any failure here cannot prevent key handler registration
+    # below (which would break ALL keyboard input). On failure, clear the
+    # partially-populated nav state so get_all_buttons() reliably falls back
+    # to creation order, and log with full traceback for diagnosability.
+    try:
+        build_navigation_model()
+    except Exception:
+        nav_tab_sequence.clear()
+        nav_button_info.clear()
+        nav_idx_by_button.clear()
+        nav_grids.clear()
+        nav_group_order.clear()
+        _arrows_available = False
+        instructions = ("Q/X/Escape: exit        N/I: Normal/Insiders        "
+                        "[Shift-]Tab: navigate        Enter/Space: select")
+        logger.exception("Failed to build navigation model; "
+                         "falling back to creation-order navigation")
+
     # Register key handlers
     with dpg.handler_registry():
         # General key handler for Q, X, ESC, N, I
@@ -865,6 +1070,20 @@ def main():
         # Space/Enter to activate button
         dpg.add_key_press_handler(KEY_SPACE, callback=enter_handler)
         dpg.add_key_press_handler(KEY_ENTER, callback=enter_handler)
+
+        # Arrow keys to move button focus (if supported by this DearPyGUI build)
+        if _arrows_available:
+            dpg.add_key_press_handler(
+                KEY_UP, callback=lambda s, k: arrow_navigate("up"))
+            dpg.add_key_press_handler(
+                KEY_DOWN, callback=lambda s, k: arrow_navigate("down"))
+            dpg.add_key_press_handler(
+                KEY_LEFT, callback=lambda s, k: arrow_navigate("left"))
+            dpg.add_key_press_handler(
+                KEY_RIGHT, callback=lambda s, k: arrow_navigate("right"))
+        else:
+            logger.warning("Arrow key constants not available; arrow "
+                           "navigation disabled.")
 
     # Run the app
     icon_path = get_data_file_path("VSCL.ico")

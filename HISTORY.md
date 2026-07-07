@@ -1,5 +1,9 @@
 # VS Code Launcher version history
 
+## v0.13.0 3 July 2026
+
+- Improve tab/shift-tab cycling and add cursor key navigation.
+
 ## v0.12.2 6 June 2025
 
 - Fix bug with compiled program not correctly saving window size changes.

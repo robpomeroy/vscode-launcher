@@ -1,0 +1,28 @@
+{
+    "autopep8.args": [
+        "--max-line-length",
+        "80",
+        "--indent-size=4"
+    ],
+    "editor.insertSpaces": true,
+    "editor.rulers": [
+        80,
+        120
+    ],
+    "[python]": {
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "never",
+            "source.fixAll": "never"
+        },
+        "editor.defaultFormatter": "ms-python.autopep8",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 4
+    },
+    "python-envs.pythonProjects": [
+        {
+            "path": ".",
+            "envManager": "ms-python.python:venv",
+            "packageManager": "ms-python.python:pip"
+        }
+    ]
+}
