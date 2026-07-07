@@ -545,7 +545,7 @@ def main():
         Build a 2-column grid model from a sorted list of buttons.
         Returns (grid, col_left, col_right) where each is a list of button ids
         in row-major order (so element at index i represents row i, and the
-        shorter column determines the in-group row count).
+        longer column determines the in-group row count).
         """
         col_left = []
         col_right = []
