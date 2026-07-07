@@ -60,19 +60,21 @@ def _resolve_key_constants():
     global KEY_I, KEY_N, KEY_Q, KEY_X
     global KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT
 
-    KEY_SHIFT = dpg.mvKey_LShift
-    KEY_TAB = dpg.mvKey_Tab
-    KEY_ENTER = dpg.mvKey_Return
-    KEY_SPACE = dpg.mvKey_Spacebar
-    KEY_ESCAPE = dpg.mvKey_Escape
-    KEY_I = dpg.mvKey_I
-    KEY_N = dpg.mvKey_N
-    KEY_Q = dpg.mvKey_Q
-    KEY_X = dpg.mvKey_X
-    KEY_UP = dpg.mvKey_Up
-    KEY_DOWN = dpg.mvKey_Down
-    KEY_LEFT = dpg.mvKey_Left
-    KEY_RIGHT = dpg.mvKey_Right
+    # Prefer DearPyGUI key constants when available; fall back to legacy
+    # numeric codes so the launcher keeps working across DearPyGUI versions.
+    KEY_SHIFT = getattr(dpg, "mvKey_LShift", 16)
+    KEY_TAB = getattr(dpg, "mvKey_Tab", 9)
+    KEY_ENTER = getattr(dpg, "mvKey_Return", 13)
+    KEY_SPACE = getattr(dpg, "mvKey_Spacebar", 32)
+    KEY_ESCAPE = getattr(dpg, "mvKey_Escape", 526)
+    KEY_I = getattr(dpg, "mvKey_I", 554)
+    KEY_N = getattr(dpg, "mvKey_N", 559)
+    KEY_Q = getattr(dpg, "mvKey_Q", 562)
+    KEY_X = getattr(dpg, "mvKey_X", 569)
+    KEY_UP = getattr(dpg, "mvKey_Up", None)
+    KEY_DOWN = getattr(dpg, "mvKey_Down", None)
+    KEY_LEFT = getattr(dpg, "mvKey_Left", None)
+    KEY_RIGHT = getattr(dpg, "mvKey_Right", None)
 
 
 def find_and_activate_window():
@@ -480,7 +482,7 @@ def main():
 
     # Navigation instructions
     instructions = ("Q/X/Escape: exit        N/I: Normal/Insiders        "
-                    "Tab/Arrows: navigate        Enter/Space: select")
+                    "[Shift-]Tab/Arrows: navigate        Enter/Space: select")
 
     # Initialise the DearPyGui context and get the list of workspaces
     dpg.create_context()
@@ -1055,15 +1057,19 @@ def main():
         dpg.add_key_press_handler(KEY_SPACE, callback=enter_handler)
         dpg.add_key_press_handler(KEY_ENTER, callback=enter_handler)
 
-        # Arrow keys to move button focus
-        dpg.add_key_press_handler(KEY_UP,
-                                  callback=lambda s, k: arrow_navigate("up"))
-        dpg.add_key_press_handler(KEY_DOWN,
-                                  callback=lambda s, k: arrow_navigate("down"))
-        dpg.add_key_press_handler(KEY_LEFT,
-                                  callback=lambda s, k: arrow_navigate("left"))
-        dpg.add_key_press_handler(KEY_RIGHT,
-                                  callback=lambda s, k: arrow_navigate("right"))
+        # Arrow keys to move button focus (if supported by this DearPyGUI build)
+        if all(k is not None for k in (KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT)):
+            dpg.add_key_press_handler(
+                KEY_UP, callback=lambda s, k: arrow_navigate("up"))
+            dpg.add_key_press_handler(
+                KEY_DOWN, callback=lambda s, k: arrow_navigate("down"))
+            dpg.add_key_press_handler(
+                KEY_LEFT, callback=lambda s, k: arrow_navigate("left"))
+            dpg.add_key_press_handler(
+                KEY_RIGHT, callback=lambda s, k: arrow_navigate("right"))
+        else:
+            logger.warning("Arrow key constants not available; arrow "
+                           "navigation disabled.")
 
     # Run the app
     icon_path = get_data_file_path("VSCL.ico")
