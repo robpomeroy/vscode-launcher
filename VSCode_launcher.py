@@ -3,11 +3,14 @@ import dearpygui.dearpygui as dpg
 import os
 import json
 import re
+import codecs
+import shutil
 import subprocess
 import sys
 import logging
 import win32gui
 import win32con
+import winreg
 
 # Configure logging
 logging.basicConfig(
@@ -25,7 +28,7 @@ logging.basicConfig(
 logger = logging.getLogger('VSCodeLauncher')
 
 # Constants
-VERSION = "v0.13.0"
+VERSION = "v0.14.0"
 WINDOW_TITLE = f"VSCodeLauncher {VERSION}"
 DEFAULT_APP_HEIGHT = 300  # Default height if not specified in config
 DEFAULT_APP_WIDTH = 500   # Default width if not specified in config
@@ -41,6 +44,7 @@ KEY_SPACE = None
 KEY_ESCAPE = None
 KEY_I = None
 KEY_N = None
+KEY_A = None
 KEY_Q = None
 KEY_X = None
 KEY_UP = None
@@ -56,7 +60,7 @@ def _resolve_key_constants():
     constants are available.
     """
     global KEY_TAB, KEY_ENTER, KEY_SPACE, KEY_ESCAPE
-    global KEY_I, KEY_N, KEY_Q, KEY_X
+    global KEY_I, KEY_N, KEY_A, KEY_Q, KEY_X
     global KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT
 
     # Prefer DearPyGUI key constants when available; fall back to legacy
@@ -67,6 +71,7 @@ def _resolve_key_constants():
     KEY_ESCAPE = getattr(dpg, "mvKey_Escape", 526)
     KEY_I = getattr(dpg, "mvKey_I", 554)
     KEY_N = getattr(dpg, "mvKey_N", 559)
+    KEY_A = getattr(dpg, "mvKey_A", 541)
     KEY_Q = getattr(dpg, "mvKey_Q", 562)
     KEY_X = getattr(dpg, "mvKey_X", 569)
     KEY_UP = getattr(dpg, "mvKey_Up", None)
@@ -206,7 +211,9 @@ def load_config(config_path: str):
                     "wsl_command": "wsl code",
                     "windows_command": "code.cmd",
                     "wsl_insiders_command": "wsl code-insiders",
-                    "windows_insiders_command": "code-insiders.cmd"
+                    "windows_insiders_command": "code-insiders.cmd",
+                    "windows_antigravity_command": "",
+                    "wsl_antigravity_command": ""
                 },
                 "last_selected_option": "normal",  # Default to normal VS Code
                 "window_size": {
@@ -258,6 +265,146 @@ def get_data_file_path(filename):
         return os.path.join(os.path.dirname(__file__), filename)
 
 
+# Result cache for find_antigravity_install(): the registry scan only needs
+# to run once per process.
+_antigravity_cli_cache = None
+_antigravity_cli_cached = False
+
+
+def find_antigravity_install():
+    '''
+    Locate the Antigravity IDE installation and return the path to its CLI
+    launcher (bin/antigravity-ide.cmd), or None if not found.
+
+    Resolution order:
+    1. Inno Setup uninstall registry keys (HKCU then HKLM, both 64-bit and
+       WOW6432Node views). DisplayIcon, InstallLocation and "Inno Setup:
+       App Path" all point at the install directory.
+    2. HKCU\\Software\\Classes\\Applications\\Antigravity.exe\\shell\\open
+       "icon" value (may be stale, so the file's existence is verified).
+    3. Well-known install locations.
+    4. antigravity-ide.cmd on PATH.
+    '''
+    global _antigravity_cli_cache, _antigravity_cli_cached
+    if _antigravity_cli_cached:
+        return _antigravity_cli_cache
+    cli_relpath = os.path.join("bin", "antigravity-ide.cmd")
+
+    def install_dir_to_cli(install_dir):
+        if not install_dir:
+            return None
+        install_dir = install_dir.strip().strip('"')
+        # DisplayIcon may carry an icon-index suffix such as ",0".
+        install_dir = install_dir.split(",", 1)[0].strip().strip('"')
+        if os.path.splitext(install_dir)[1].lower() == ".exe":
+            install_dir = os.path.dirname(install_dir)
+        cli_path = os.path.join(install_dir, cli_relpath)
+        if os.path.isfile(cli_path):
+            return cli_path
+        return None
+
+    # 1. Inno Setup uninstall keys. These are keyed by GUID (e.g.
+    # "{...}_is1"), which varies between versions, so scan every subkey and
+    # filter on DisplayName.
+    uninstall_roots = [
+        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+    ]
+    hives = [(winreg.HKEY_CURRENT_USER, "HKCU"),
+             (winreg.HKEY_LOCAL_MACHINE, "HKLM")]
+    for hive, hive_name in hives:
+        for root in uninstall_roots:
+            try:
+                with winreg.OpenKey(hive, root) as base_key:
+                    index = 0
+                    while True:
+                        try:
+                            subkey_name = winreg.EnumKey(base_key, index)
+                        except OSError:
+                            break
+                        index += 1
+                        try:
+                            with winreg.OpenKey(
+                                    base_key, subkey_name) as subkey:
+                                display_name = winreg.QueryValueEx(
+                                    subkey, "DisplayName")[0]
+                                if not str(display_name).lower().startswith(
+                                        "antigravity"):
+                                    continue
+                                # Read the candidate values while the key is
+                                # still open (the handle would be invalid
+                                # after the with-block closes).
+                                for value_name in (
+                                        "DisplayIcon",
+                                        "InstallLocation",
+                                        "Inno Setup: App Path"):
+                                    try:
+                                        value = winreg.QueryValueEx(
+                                            subkey, value_name)[0]
+                                    except OSError:
+                                        continue
+                                    cli_path = install_dir_to_cli(value)
+                                    if cli_path:
+                                        logger.info(
+                                            f"Found Antigravity via "
+                                            f"{hive_name}\\{root}\\"
+                                            f"{subkey_name}:{value_name}")
+                                        _antigravity_cli_cache = cli_path
+                                        _antigravity_cli_cached = True
+                                        return cli_path
+                        except OSError as e:
+                            logger.debug(
+                                f"Error reading uninstall key "
+                                f"{subkey_name}: {e}")
+            except OSError as e:
+                logger.debug(f"Cannot open {hive_name}\\{root}: {e}")
+
+    # 2. Applications key (last resort: known to go stale after upgrades).
+    try:
+        with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Classes\Applications\Antigravity.exe"
+                r"\shell\open") as key:
+            icon_value = winreg.QueryValueEx(key, "icon")[0]
+            cli_path = install_dir_to_cli(icon_value)
+            if cli_path:
+                logger.info("Found Antigravity via Applications key")
+                _antigravity_cli_cache = cli_path
+                _antigravity_cli_cached = True
+                return cli_path
+    except OSError:
+        pass
+
+    # 3. Well-known install locations.
+    candidate_dirs = [
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs",
+                     "Antigravity IDE"),
+        os.path.join(os.environ.get("ProgramFiles", ""), "Antigravity IDE"),
+        os.path.join(os.environ.get(
+            "ProgramFiles(x86)", ""), "Antigravity IDE"),
+    ]
+    for candidate in candidate_dirs:
+        cli_path = install_dir_to_cli(candidate)
+        if cli_path:
+            logger.info(f"Found Antigravity at default path: {candidate}")
+            _antigravity_cli_cache = cli_path
+            _antigravity_cli_cached = True
+            return cli_path
+
+    # 4. PATH lookup.
+    cli_path = shutil.which("antigravity-ide.cmd")
+    if cli_path:
+        logger.info(f"Found Antigravity CLI on PATH: {cli_path}")
+        _antigravity_cli_cache = cli_path
+        _antigravity_cli_cached = True
+        return cli_path
+
+    logger.info("Antigravity IDE installation not found")
+    _antigravity_cli_cache = None
+    _antigravity_cli_cached = True
+    return None
+
+
 def validate_workspace_name(workspace):
     if not re.match(r'^[\w\s\[\]\-\.]+\.code-workspace$', workspace):
         logger.error(f"Invalid workspace name: {workspace}")
@@ -301,6 +448,114 @@ def get_workspaces(config):
     return workspaces
 
 
+def get_default_wsl_distro():
+    '''
+    Return the name of the default WSL distro, or None if it cannot be
+    determined. The default distro is marked with an asterisk in the output
+    of "wsl.exe --list --verbose".
+    '''
+    try:
+        result = subprocess.run(
+            ["wsl.exe", "--list", "--verbose"],
+            capture_output=True, timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW)
+
+        # wsl.exe emits UTF-16LE (sometimes with BOM, sometimes with bare
+        # NUL line separators). text=True would decode with the process
+        # locale and garble the BOM, so capture bytes and decode explicitly.
+        raw = result.stdout
+        if not raw:
+            return None
+        if raw.startswith(codecs.BOM_UTF16_BE):
+            output = raw.decode("utf-16-be", errors="replace")
+        elif (raw.startswith(codecs.BOM_UTF16_LE)
+              or raw[1::2] == b"\x00" * (len(raw) // 2)):
+            # Honours a UTF-16LE BOM, or reliably detects BOM-less UTF-16LE
+            # (every other byte is NUL) so the parsed lines start cleanly.
+            output = raw.decode("utf-16-le", errors="replace")
+        else:
+            output = raw.decode("utf-8", errors="replace")
+        # Strip any residual NUL characters (bare NUL line separators).
+        if "\x00" in output:
+            output = output.replace("\x00", "")
+
+        for line in output.splitlines():
+            # The default distro row starts with an asterisk.
+            stripped = line.strip()
+            if stripped.startswith("*"):
+                parts = stripped[1:].split()
+                if parts:
+                    return parts[0]
+        return None
+    except Exception as e:
+        logger.error(f"Error detecting default WSL distro: {e}")
+        return None
+
+
+def _split_windows_command(command):
+    '''
+    Split a Windows command-line string into tokens, honouring double
+    quotes so paths containing spaces (e.g. "...\\Antigravity IDE\\...")
+    stay intact. Quotes are removed from the tokens; Popen re-quotes each
+    token when building the command line.
+    '''
+    tokens = []
+    current = []
+    in_quotes = False
+    for ch in command:
+        if ch == '"':
+            in_quotes = not in_quotes
+        elif ch.isspace() and not in_quotes:
+            if current:
+                tokens.append("".join(current))
+                current = []
+        else:
+            current.append(ch)
+    if current:
+        tokens.append("".join(current))
+    return tokens
+
+
+def build_antigravity_windows_command(launch_options):
+    '''
+    Build the command list for launching a Windows workspace in Antigravity.
+
+    Returns a list of command tokens, or None if Antigravity cannot be
+    located.
+    '''
+    configured = launch_options.get("windows_antigravity_command", "")
+    if configured:
+        return _split_windows_command(configured)
+    cli_path = find_antigravity_install()
+    if cli_path:
+        return [cli_path]
+    return None
+
+
+def build_antigravity_wsl_command(launch_options):
+    '''
+    Build the command list for launching a WSL workspace in Antigravity.
+
+    Antigravity's bundled remote-wsl extension connects via
+    "--remote wsl+<distro>", so the Windows CLI is used with the WSL path.
+    Returns a list of command tokens, or None if Antigravity or the default
+    WSL distro cannot be determined.
+    '''
+    configured = launch_options.get("wsl_antigravity_command", "")
+    if configured:
+        return _split_windows_command(configured)
+    cli_path = find_antigravity_install()
+    if not cli_path:
+        logger.error("Antigravity CLI not found for WSL launch")
+        return None
+    distro = get_default_wsl_distro()
+    if not distro:
+        logger.error("Could not determine default WSL distro")
+        return None
+    logger.info(f"Using WSL distro '{distro}' for Antigravity remote launch")
+    return [cli_path, "--remote", f"wsl+{distro}"]
+
+
 def launch_workspace(workspace, wsl, config):
     '''
     Launch the specified workspace in VS Code. If wsl is True, launch in WSL
@@ -339,6 +594,14 @@ def launch_workspace(workspace, wsl, config):
         if selected_option == "insiders":
             command = launch_options.get(
                 "wsl_insiders_command", "wsl code-insiders").split()
+        elif selected_option == "antigravity":
+            command = build_antigravity_wsl_command(launch_options)
+            if command is None:
+                error_msg = ("Antigravity not found or no WSL distro "
+                             "detected; see vscode_launcher.log")
+                dpg.set_value("status_text", error_msg)
+                logger.error(error_msg)
+                return
         else:
             command = launch_options.get(
                 "wsl_command", "wsl code").split()
@@ -347,6 +610,13 @@ def launch_workspace(workspace, wsl, config):
         if selected_option == "insiders":
             command = launch_options.get(
                 "windows_insiders_command", "code-insiders.cmd").split()
+        elif selected_option == "antigravity":
+            command = build_antigravity_windows_command(launch_options)
+            if command is None:
+                error_msg = "Antigravity IDE not found on this system"
+                dpg.set_value("status_text", error_msg)
+                logger.error(error_msg)
+                return
         else:
             command = launch_options.get(
                 "windows_command", "code.cmd").split()
@@ -489,7 +759,8 @@ def main():
     _arrows_available = all(
         k is not None for k in (KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT))
     _nav_hint = "[Shift-]Tab/Arrows" if _arrows_available else "[Shift-]Tab"
-    instructions = (f"Q/X/Escape: exit        N/I: Normal/Insiders        "
+    instructions = (f"Q/X/Escape: exit        N/I/A: Normal/Insiders/"
+                    f"Antigravity        "
                     f"{_nav_hint}: navigate        Enter/Space: select")
 
     # Custom fonts
@@ -866,6 +1137,27 @@ def main():
                              "does not exist!")
             return True
 
+        # Handle 'A' key to select Antigravity IDE
+        elif key_pressed == KEY_A:  # Dear PyGui key code for 'A'
+            logger.info(f"Key press recognized as A ({key_pressed}), "
+                        "selecting Antigravity")
+            if dpg.does_item_exist("code_version_selector"):
+                current_value = dpg.get_value("code_version_selector")
+                logger.info(f"Current radio button value: {current_value}")
+                dpg.set_value("code_version_selector", "Antigravity")
+                new_value = dpg.get_value("code_version_selector")
+                logger.info(f"New radio button value: {new_value}")
+                update_last_selected_option("antigravity", config_path)
+                dpg.set_value(
+                    "status_text",
+                    f"VS Code version set to: Antigravity\n{instructions}")
+                dpg.configure_item("code_version_selector",
+                                   default_value="Antigravity")
+            else:
+                logger.error("Radio button with tag 'code_version_selector' "
+                             "does not exist!")
+            return True
+
         return False
 
     def create_workspace_buttons(workspace_list, is_wsl, left_group,
@@ -974,21 +1266,25 @@ def main():
 
     def create_radio_control(config_path):
         """
-        Create a horizontal radio control for selecting VS Code or VS Code
-        Insiders.
+        Create a horizontal radio control for selecting VS Code, VS Code
+        Insiders, or Antigravity.
         """
         with dpg.group(horizontal=True):
             dpg.add_text("Select VS Code Version:")
             # Ensure the default value matches the case and format of the radio
             # button items
-            default_value = ("Normal" if
-                             config.get("last_selected_option",
-                                        "normal").lower() == "normal"
-                             else "Insiders")
+            last_option = config.get("last_selected_option",
+                                     "normal").lower()
+            if last_option == "insiders":
+                default_value = "Insiders"
+            elif last_option == "antigravity":
+                default_value = "Antigravity"
+            else:
+                default_value = "Normal"
             logger.info(
                 f"Creating radio button with default value: {default_value}")
             radio_button = dpg.add_radio_button(
-                items=["Normal", "Insiders"],
+                items=["Normal", "Insiders", "Antigravity"],
                 default_value=default_value,
                 callback=lambda sender,
                 app_data: update_last_selected_option(app_data, config_path),
@@ -1053,7 +1349,8 @@ def main():
         nav_grids.clear()
         nav_group_order.clear()
         _arrows_available = False
-        instructions = ("Q/X/Escape: exit        N/I: Normal/Insiders        "
+        instructions = ("Q/X/Escape: exit        N/I/A: Normal/Insiders/"
+                        "Antigravity        "
                         "[Shift-]Tab: navigate        Enter/Space: select")
         logger.exception("Failed to build navigation model; "
                          "falling back to creation-order navigation")

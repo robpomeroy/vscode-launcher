@@ -5,7 +5,9 @@
         "wsl_command": "wsl code",
         "windows_command": "code.cmd",
         "wsl_insiders_command": "wsl code-insiders",
-        "windows_insiders_command": "code-insiders.cmd"
+        "windows_insiders_command": "code-insiders.cmd",
+        "windows_antigravity_command": "",
+        "wsl_antigravity_command": ""
     },
     "last_selected_option": "normal",
     "window_size": {

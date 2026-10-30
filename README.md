@@ -2,8 +2,8 @@
 
 A simple, keyboard-navigable launcher for VS Code workspaces that supports both
 Windows and WSL environments. This tool makes it easy to switch between projects
-across different environments, and to choose between standard VS Code and VS
-Code Insiders.
+across different environments, and to choose between standard VS Code, VS Code
+Insiders, and Google's Antigravity IDE.
 
 ![VS Code Launcher Screenshot](images/screenshot.jpg)
 
@@ -17,15 +17,17 @@ Code Insiders.
 - Configurable paths for Windows and WSL workspaces
 - Dynamic UI that adjusts to window resizing and remembers last size
 - Clear visual feedback for selected items
-- Selector for VS Code Insiders or standard VS Code, with the last used
-  selection remembered
+- Selector for VS Code Insiders, standard VS Code, or Google Antigravity, with
+  the last used selection remembered
 - Launches single instance
 
 ## Key Requirements
 
-- Python 3.6+
+- Python 3.7+
 - Dear PyGui library (see also `requirements.txt`)
 - VS Code installed on Windows and/or WSL, optionally with Insiders also
+- Optionally, Google's Antigravity IDE (detected automatically from the
+  registry or default install locations)
 
 ## Configuration
 
@@ -34,6 +36,8 @@ The launcher uses a JSON configuration file (`config.json`) to define:
 1. Path to VS Code workspaces in Windows
 2. Equivalent path to the same workspaces in WSL
 3. Command to launch VS Code [Insiders] in each environment
+4. Optional commands to launch Google Antigravity (empty values trigger
+   automatic detection)
 
 Example configuration:
 
@@ -45,7 +49,9 @@ Example configuration:
         "wsl_command": "wsl code",
         "windows_command": "code.cmd",
         "wsl_insiders_command": "wsl code-insiders",
-        "windows_insiders_command": "code-insiders.cmd"
+        "windows_insiders_command": "code-insiders.cmd",
+        "windows_antigravity_command": "",
+        "wsl_antigravity_command": ""
     },
     "last_selected_option": "normal",
     "window_size": {
@@ -54,6 +60,25 @@ Example configuration:
     }
 }
 ```
+
+### Antigravity
+
+If Google's Antigravity IDE is installed, it appears as a third option in the
+version selector (or press **A**). The launcher locates it automatically via
+the Windows uninstall registry keys, the `Applications` file association, or
+the default install locations (`%LOCALAPPDATA%\Programs\Antigravity IDE`,
+`%ProgramFiles%\Antigravity IDE`), and launches workspaces through its
+`bin\antigravity-ide.cmd` CLI.
+
+WSL workspaces are opened through Antigravity's built-in remote-WSL support
+using the default WSL distro (`wsl.exe --list --verbose`). If detection fails
+or you prefer explicit control, set `windows_antigravity_command` (e.g.
+`"C:/Users/<you>/AppData/Local/Programs/Antigravity IDE/bin/antigravity-ide.cmd"`)
+and `wsl_antigravity_command` (e.g.
+`"C:/Users/<you>/AppData/Local/Programs/Antigravity IDE/bin/antigravity-ide.cmd" --remote wsl+Ubuntu`)
+in `launch_options`. Because the default install path contains a space,
+enclose the executable path in quotes; additional arguments may be appended
+outside the quotes.
 
 ## Workspace Naming Convention
 
@@ -92,6 +117,7 @@ To run the Python script:
 - **Tab**/**Shift-tab** (and arrow keys where supported by DearPyGUI): Navigate
   between workspace buttons
 - **Enter/Space**: Launch the selected workspace
+- **N/I/A**: Select Normal VS Code / VS Code Insiders / Antigravity
 - **Q/X/Esc**: Exit the application
 
 ## Building the Executable

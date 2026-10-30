@@ -1,5 +1,14 @@
 # VS Code Launcher version history
 
+## v0.14.0 30 October 2026
+
+- Add Google Antigravity as a third launch target (N/I/A keys). Antigravity
+  is detected automatically from the Windows registry or default install
+  locations; WSL workspaces are opened through Antigravity's built-in
+  remote-WSL support using the default WSL distro. Optional
+  `windows_antigravity_command` and `wsl_antigravity_command` overrides in
+  `config.json`.
+
 ## v0.13.0 3 July 2026
 
 - Improve tab/shift-tab cycling and add cursor key navigation.
