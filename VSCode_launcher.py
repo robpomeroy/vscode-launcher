@@ -521,11 +521,11 @@ def main():
 
     # Navigation model: tab sequence (alphabetical by label, WSL then Windows),
     # and per-group grid coordinates for arrow key movement.
-    nav_tab_sequence = []          # List of button ids in tab order
-    nav_button_info = {}           # button id -> {"group", "row", "col"}
-    nav_idx_by_button = {}         # button id -> index in nav_tab_sequence
-    nav_grids = {}                 # group -> {row: {"left": btn, "right": btn}}
-    nav_group_order = []           # Ordered list of group names for traversal
+    nav_tab_sequence = []         # List of button ids in tab order
+    nav_button_info = {}          # button id -> {"group", "row", "col"}
+    nav_idx_by_button = {}        # button id -> index in nav_tab_sequence
+    nav_grids = {}                # group -> {row: {"left": btn, "right": btn}}
+    nav_group_order = []          # Ordered list of group names for traversal
 
     # Helper function to get all buttons
 
@@ -661,7 +661,8 @@ def main():
                     # Cross-group: leap to previous group's right column on
                     # same row. Use safe lookup for the same reason.
                     prev_group = nav_group_order[idx - 1]
-                    target_btn = nav_grids[prev_group].get(row, {}).get("right")
+                    target_btn = nav_grids[prev_group].get(row, {}).get(
+                        "right")
         elif direction in ("up", "down"):
             row_delta = -1 if direction == "up" else 1
             new_row = row + row_delta
@@ -1071,7 +1072,8 @@ def main():
         dpg.add_key_press_handler(KEY_SPACE, callback=enter_handler)
         dpg.add_key_press_handler(KEY_ENTER, callback=enter_handler)
 
-        # Arrow keys to move button focus (if supported by this DearPyGUI build)
+        # Arrow keys to move button focus (if supported by this DearPyGUI
+        # build)
         if _arrows_available:
             dpg.add_key_press_handler(
                 KEY_UP, callback=lambda s, k: arrow_navigate("up"))

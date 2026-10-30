@@ -16,7 +16,9 @@
         },
         "editor.defaultFormatter": "ms-python.autopep8",
         "editor.formatOnSave": true,
-        "editor.tabSize": 4
+        "editor.tabSize": 4,
+        "rewrap.wrappingColumn": 79,
+        "rewrap.wholeComment": false        
     },
     "python-envs.pythonProjects": [
         {
