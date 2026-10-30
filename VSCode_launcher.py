@@ -294,7 +294,7 @@ def find_antigravity_install():
             return None
         install_dir = install_dir.strip().strip('"')
         # DisplayIcon may carry an icon-index suffix such as ",0".
-        install_dir = install_dir.split(",")[0].strip()
+        install_dir = install_dir.split(",", 1)[0].strip().strip('"')
         if os.path.splitext(install_dir)[1].lower() == ".exe":
             install_dir = os.path.dirname(install_dir)
         cli_path = os.path.join(install_dir, cli_relpath)
