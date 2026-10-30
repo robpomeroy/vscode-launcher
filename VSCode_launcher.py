@@ -264,6 +264,12 @@ def get_data_file_path(filename):
         return os.path.join(os.path.dirname(__file__), filename)
 
 
+# Result cache for find_antigravity_install(): the registry scan only needs
+# to run once per process.
+_antigravity_cli_cache = None
+_antigravity_cli_cached = False
+
+
 def find_antigravity_install():
     '''
     Locate the Antigravity IDE installation and return the path to its CLI
@@ -278,6 +284,9 @@ def find_antigravity_install():
     3. Well-known install locations.
     4. antigravity-ide.cmd on PATH.
     '''
+    global _antigravity_cli_cache, _antigravity_cli_cached
+    if _antigravity_cli_cached:
+        return _antigravity_cli_cache
     cli_relpath = os.path.join("bin", "antigravity-ide.cmd")
 
     def install_dir_to_cli(install_dir):
@@ -293,8 +302,9 @@ def find_antigravity_install():
             return cli_path
         return None
 
-    # 1. Inno Setup uninstall keys. The GUID varies between versions, so
-    # match on DisplayName as well as the known GUID.
+    # 1. Inno Setup uninstall keys. These are keyed by GUID (e.g.
+    # "{...}_is1"), which varies between versions, so scan every subkey and
+    # filter on DisplayName.
     uninstall_roots = [
         r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
@@ -312,8 +322,6 @@ def find_antigravity_install():
                         except OSError:
                             break
                         index += 1
-                        if "antigravity" not in subkey_name.lower():
-                            continue
                         try:
                             with winreg.OpenKey(
                                     base_key, subkey_name) as subkey:
@@ -322,9 +330,13 @@ def find_antigravity_install():
                                 if not str(display_name).lower().startswith(
                                         "antigravity"):
                                     continue
-                                for value_name in ("DisplayIcon",
-                                                   "InstallLocation",
-                                                   "Inno Setup: App Path"):
+                                # Read the candidate values while the key is
+                                # still open (the handle would be invalid
+                                # after the with-block closes).
+                                for value_name in (
+                                        "DisplayIcon",
+                                        "InstallLocation",
+                                        "Inno Setup: App Path"):
                                     try:
                                         value = winreg.QueryValueEx(
                                             subkey, value_name)[0]
@@ -336,6 +348,8 @@ def find_antigravity_install():
                                             f"Found Antigravity via "
                                             f"{hive_name}\\{root}\\"
                                             f"{subkey_name}:{value_name}")
+                                        _antigravity_cli_cache = cli_path
+                                        _antigravity_cli_cached = True
                                         return cli_path
                         except OSError as e:
                             logger.debug(
@@ -354,6 +368,8 @@ def find_antigravity_install():
             cli_path = install_dir_to_cli(icon_value)
             if cli_path:
                 logger.info("Found Antigravity via Applications key")
+                _antigravity_cli_cache = cli_path
+                _antigravity_cli_cached = True
                 return cli_path
     except OSError:
         pass
@@ -363,21 +379,28 @@ def find_antigravity_install():
         os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs",
                      "Antigravity IDE"),
         os.path.join(os.environ.get("ProgramFiles", ""), "Antigravity IDE"),
-        os.path.join(os.environ.get("ProgramFiles(x86)", ""), "Antigravity IDE"),
+        os.path.join(os.environ.get(
+            "ProgramFiles(x86)", ""), "Antigravity IDE"),
     ]
     for candidate in candidate_dirs:
         cli_path = install_dir_to_cli(candidate)
         if cli_path:
             logger.info(f"Found Antigravity at default path: {candidate}")
+            _antigravity_cli_cache = cli_path
+            _antigravity_cli_cached = True
             return cli_path
 
     # 4. PATH lookup.
     cli_path = shutil.which("antigravity-ide.cmd")
     if cli_path:
         logger.info(f"Found Antigravity CLI on PATH: {cli_path}")
+        _antigravity_cli_cache = cli_path
+        _antigravity_cli_cached = True
         return cli_path
 
     logger.info("Antigravity IDE installation not found")
+    _antigravity_cli_cache = None
+    _antigravity_cli_cached = True
     return None
 
 

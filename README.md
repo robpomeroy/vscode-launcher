@@ -23,7 +23,7 @@ Insiders, and Google's Antigravity IDE.
 
 ## Key Requirements
 
-- Python 3.6+
+- Python 3.7+
 - Dear PyGui library (see also `requirements.txt`)
 - VS Code installed on Windows and/or WSL, optionally with Insiders also
 - Optionally, Google's Antigravity IDE (detected automatically from the
