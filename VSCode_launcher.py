@@ -3,6 +3,7 @@ import dearpygui.dearpygui as dpg
 import os
 import json
 import re
+import codecs
 import shutil
 import subprocess
 import sys
@@ -456,12 +457,28 @@ def get_default_wsl_distro():
     try:
         result = subprocess.run(
             ["wsl.exe", "--list", "--verbose"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, timeout=15,
             creationflags=subprocess.CREATE_NO_WINDOW)
-        # wsl.exe emits UTF-16 output; decode defensively.
-        output = result.stdout
-        if output and "\x00" in output:
+
+        # wsl.exe emits UTF-16LE (sometimes with BOM, sometimes with bare
+        # NUL line separators). text=True would decode with the process
+        # locale and garble the BOM, so capture bytes and decode explicitly.
+        raw = result.stdout
+        if not raw:
+            return None
+        if raw.startswith(codecs.BOM_UTF16_BE):
+            output = raw.decode("utf-16-be", errors="replace")
+        elif (raw.startswith(codecs.BOM_UTF16_LE)
+              or raw[1::2] == b"\x00" * (len(raw) // 2)):
+            # Honours a UTF-16LE BOM, or reliably detects BOM-less UTF-16LE
+            # (every other byte is NUL) so the parsed lines start cleanly.
+            output = raw.decode("utf-16-le", errors="replace")
+        else:
+            output = raw.decode("utf-8", errors="replace")
+        # Strip any residual NUL characters (bare NUL line separators).
+        if "\x00" in output:
             output = output.replace("\x00", "")
+
         for line in output.splitlines():
             # The default distro row starts with an asterisk.
             stripped = line.strip()
