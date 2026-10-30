@@ -73,9 +73,12 @@ the default install locations (`%LOCALAPPDATA%\Programs\Antigravity IDE`,
 WSL workspaces are opened through Antigravity's built-in remote-WSL support
 using the default WSL distro (`wsl.exe --list --verbose`). If detection fails
 or you prefer explicit control, set `windows_antigravity_command` (e.g.
-`C:/Users/<you>/AppData/Local/Programs/Antigravity IDE/bin/antigravity-ide.cmd`)
+`"C:\Users\<you>\AppData\Local\Programs\Antigravity IDE\bin\antigravity-ide.cmd"`)
 and `wsl_antigravity_command` (e.g.
-`<path to antigravity-ide.cmd> --remote wsl+Ubuntu`) in `launch_options`.
+`"C:\Users\<you>\AppData\Local\Programs\Antigravity IDE\bin\antigravity-ide.cmd" --remote wsl+Ubuntu`)
+in `launch_options`. Because the default install path contains a space,
+enclose the executable path in quotes; additional arguments may be appended
+outside the quotes.
 
 ## Workspace Naming Convention
 

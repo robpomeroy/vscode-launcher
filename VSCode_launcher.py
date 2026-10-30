@@ -475,6 +475,30 @@ def get_default_wsl_distro():
         return None
 
 
+def _split_windows_command(command):
+    '''
+    Split a Windows command-line string into tokens, honouring double
+    quotes so paths containing spaces (e.g. "...\\Antigravity IDE\\...")
+    stay intact. Quotes are removed from the tokens; Popen re-quotes each
+    token when building the command line.
+    '''
+    tokens = []
+    current = []
+    in_quotes = False
+    for ch in command:
+        if ch == '"':
+            in_quotes = not in_quotes
+        elif ch.isspace() and not in_quotes:
+            if current:
+                tokens.append("".join(current))
+                current = []
+        else:
+            current.append(ch)
+    if current:
+        tokens.append("".join(current))
+    return tokens
+
+
 def build_antigravity_windows_command(launch_options):
     '''
     Build the command list for launching a Windows workspace in Antigravity.
@@ -484,7 +508,7 @@ def build_antigravity_windows_command(launch_options):
     '''
     configured = launch_options.get("windows_antigravity_command", "")
     if configured:
-        return configured.split()
+        return _split_windows_command(configured)
     cli_path = find_antigravity_install()
     if cli_path:
         return [cli_path]
@@ -502,7 +526,7 @@ def build_antigravity_wsl_command(launch_options):
     '''
     configured = launch_options.get("wsl_antigravity_command", "")
     if configured:
-        return configured.split()
+        return _split_windows_command(configured)
     cli_path = find_antigravity_install()
     if not cli_path:
         logger.error("Antigravity CLI not found for WSL launch")
